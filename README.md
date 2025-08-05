@@ -7,24 +7,36 @@ A Model Context Protocol (MCP) server for managing Azure Logic Apps through Fast
 ```
 logicappmcp.py/
 ├── app/
-│   ├── __init__.py          # Package initialization
-│   ├── main.py              # FastAPI entry point
-│   ├── config.py            # Configuration management (Azure credentials, etc.)
-│   ├── logicapp_client.py   # Logic App operations wrapper
-│   └── mcp_handler.py       # MCP request handling
-├── pyproject.toml           # Project configuration and dependencies
-├── README.md                # Project documentation
-├── .gitignore               # Git ignore file
-└── .python-version          # Python version
+│   ├── __init__.py              # Package initialization
+│   ├── main.py                  # FastAPI entry point
+│   ├── config.py                # Configuration management (Azure credentials, etc.)
+│   ├── consumption/             # Logic App Consumption (serverless) specific
+│   │   ├── __init__.py          # Consumption package initialization
+│   │   ├── client.py            # Consumption Logic App client
+│   │   └── mcp_handler.py       # Consumption MCP handler
+│   ├── standard/                # Logic App Standard (dedicated hosting) specific
+│   │   ├── __init__.py          # Standard package initialization
+│   │   ├── client.py            # Standard Logic App client
+│   │   └── mcp_handler.py       # Standard MCP handler
+│   └── shared/                  # Shared utilities
+│       ├── __init__.py          # Shared package initialization
+│       └── base_client.py       # Base client with common functionality
+├── pyproject.toml               # Project configuration and dependencies
+├── README.md                    # Project documentation
+├── .gitignore                   # Git ignore file
+└── .python-version              # Python version
 ```
 
 ## Features
 
 - 🚀 **FastAPI Web API**: Provides HTTP interface for Logic App management
-- 🔧 **MCP Protocol Support**: Implements Model Context Protocol server
+- 🔧 **MCP Protocol Support**: Implements Model Context Protocol server for both plan types
 - ☁️ **Azure Integration**: Complete Azure Logic Apps management functionality
 - 📊 **Runtime Monitoring**: View Logic App execution history and status
 - ⚡ **Async Processing**: High-performance asynchronous request handling
+- 🏗️ **Plan-Specific Architecture**: Separate clients and handlers for Consumption vs Standard
+- 💰 **Consumption Support**: Serverless, pay-per-execution Logic Apps
+- 🏢 **Standard Support**: Dedicated hosting with App Service plans and VNET integration
 
 ## Installation and Setup
 
@@ -82,35 +94,93 @@ uv run uvicorn app.main:app --reload
 
 ### API Endpoints
 
+#### General Endpoints
 - `GET /` - Health check
 - `GET /health` - Service status
-- `GET /logic-apps` - List all Logic Apps
-- `POST /mcp/request` - Handle MCP requests
+- `GET /logic-apps` - List all Logic Apps (both Consumption and Standard)
+
+#### Consumption Logic Apps
+- `GET /logic-apps/consumption` - List Consumption Logic Apps only
+- `POST /mcp/consumption/request` - Handle MCP requests for Consumption Logic Apps
+
+#### Standard Logic Apps
+- `GET /logic-apps/standard` - List Standard Logic Apps only
+- `POST /mcp/standard/request` - Handle MCP requests for Standard Logic Apps
+
+#### Legacy Support
+- `POST /mcp/request` - Handle generic MCP requests (routes to consumption by default)
 
 ### MCP Tools
 
-The server provides the following MCP tools:
+#### Consumption Logic Apps Tools
 
-1. **list_logic_apps** - List all Logic Apps
-2. **get_logic_app** - Get specific Logic App details
-3. **create_logic_app** - Create new Logic App
-4. **trigger_logic_app** - Trigger Logic App execution
-5. **get_run_history** - Get run history
+1. **list_consumption_logic_apps** - List all Consumption Logic Apps
+2. **get_consumption_logic_app** - Get specific Consumption Logic App details
+3. **create_consumption_logic_app** - Create new Consumption Logic App
+4. **trigger_consumption_logic_app** - Trigger Consumption Logic App execution
+5. **get_consumption_run_history** - Get Consumption Logic App run history
+6. **get_consumption_metrics** - Get consumption-specific metrics and billing information
+7. **configure_http_trigger** - Configure HTTP trigger for Consumption Logic App
+
+#### Standard Logic Apps Tools
+
+1. **list_standard_logic_apps** - List all Standard Logic Apps
+2. **get_standard_logic_app** - Get specific Standard Logic App details
+3. **create_standard_logic_app** - Create new Standard Logic App
+4. **trigger_standard_logic_app** - Trigger Standard Logic App execution
+5. **get_standard_run_history** - Get Standard Logic App run history
+6. **get_app_service_info** - Get App Service information for Standard Logic App
+7. **scale_app_service_plan** - Scale App Service plan for Standard Logic Apps
+8. **configure_vnet_integration** - Configure VNET integration for Standard Logic App
+9. **get_standard_metrics** - Get Standard-specific metrics and performance data
 
 ## Development
 
 ### Project Structure Description
 
-- **app/main.py**: FastAPI application main entry point, defines HTTP routes
+#### Core Components
+- **app/main.py**: FastAPI application main entry point, defines HTTP routes for both plan types
 - **app/config.py**: Configuration management, including Azure credentials and server settings
-- **app/logicapp_client.py**: Azure Logic Apps client, wraps all Logic App operations
-- **app/mcp_handler.py**: MCP protocol handler, implements tool and resource interfaces
+
+#### Consumption Logic Apps (Serverless)
+- **app/consumption/client.py**: Consumption Logic App client, handles serverless workflows
+- **app/consumption/mcp_handler.py**: MCP protocol handler for Consumption Logic Apps
+
+#### Standard Logic Apps (Dedicated Hosting)
+- **app/standard/client.py**: Standard Logic App client, handles App Service-hosted workflows
+- **app/standard/mcp_handler.py**: MCP protocol handler for Standard Logic Apps
+
+#### Shared Components
+- **app/shared/base_client.py**: Base client with common functionality shared between plan types
 
 ### Adding New Features
 
-1. Add new Azure operations in `logicapp_client.py`
-2. Add corresponding MCP tools in `mcp_handler.py`
+#### For Consumption Logic Apps
+1. Add new Azure operations in `app/consumption/client.py`
+2. Add corresponding MCP tools in `app/consumption/mcp_handler.py`
 3. Add HTTP API endpoints in `main.py` (optional)
+
+#### For Standard Logic Apps
+1. Add new Azure operations in `app/standard/client.py`
+2. Add corresponding MCP tools in `app/standard/mcp_handler.py`
+3. Add HTTP API endpoints in `main.py` (optional)
+
+#### For Shared Functionality
+1. Add common operations in `app/shared/base_client.py`
+2. Inherit and use in both consumption and standard clients
+
+### Plan Types Comparison
+
+| Feature | Consumption (Serverless) | Standard (Dedicated) |
+|---------|-------------------------|---------------------|
+| **Hosting** | Azure-managed serverless | App Service plan |
+| **Billing** | Pay-per-execution | Always-on pricing |
+| **Scaling** | Automatic | Manual/Auto-scale |
+| **VNET Integration** | Limited | Full support |
+| **Local Development** | Portal/VS Code | Local + Portal |
+| **Stateful Workflows** | Limited | Full support |
+| **Custom Connectors** | Shared | Isolated |
+| **Performance** | Cold start possible | Always warm |
 
 ## License
 

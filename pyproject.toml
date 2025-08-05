@@ -10,5 +10,7 @@ dependencies = [
     "requests",
     "azure-identity",
     "azure-mgmt-logic",
-    "pydantic"
+    "azure-mgmt-web",
+    "pydantic",
+    "pydantic-settings"
 ]

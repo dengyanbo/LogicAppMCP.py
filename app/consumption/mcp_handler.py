@@ -1,22 +1,22 @@
 """
-MCP Request Handler
+Consumption MCP Handler
 
-Handles various Model Context Protocol (MCP) requests, including tool calls, resource access, etc.
+Handles MCP requests specific to Logic App Consumption (serverless) plans.
 """
 
 import json
 from typing import Dict, Any, List, Optional
-from .logicapp_client import LogicAppClient
-from .config import settings
+from .client import ConsumptionLogicAppClient
+from ..config import settings
 
 
-class MCPHandler:
-    """MCP Protocol Request Handler"""
+class ConsumptionMCPHandler:
+    """MCP Protocol Request Handler for Logic App Consumption"""
     
     def __init__(self):
-        self.logicapp_client = LogicAppClient()
+        self.logicapp_client = ConsumptionLogicAppClient()
         self.server_info = {
-            "name": settings.MCP_SERVER_NAME,
+            "name": f"{settings.MCP_SERVER_NAME}-consumption",
             "version": settings.MCP_SERVER_VERSION,
             "capabilities": {
                 "tools": True,
@@ -77,11 +77,11 @@ class MCPHandler:
         }
     
     async def _handle_tools_list(self) -> Dict[str, Any]:
-        """Return list of available tools"""
+        """Return list of available tools for Consumption Logic Apps"""
         tools = [
             {
-                "name": "list_logic_apps",
-                "description": "List all Azure Logic Apps",
+                "name": "list_consumption_logic_apps",
+                "description": "List all Logic App Consumption instances",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -89,8 +89,8 @@ class MCPHandler:
                 }
             },
             {
-                "name": "get_logic_app",
-                "description": "Get detailed information for a specific Logic App",
+                "name": "get_consumption_logic_app",
+                "description": "Get detailed information for a specific Consumption Logic App",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -103,8 +103,8 @@ class MCPHandler:
                 }
             },
             {
-                "name": "create_logic_app",
-                "description": "Create a new Logic App",
+                "name": "create_consumption_logic_app",
+                "description": "Create a new Consumption Logic App",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -115,14 +115,22 @@ class MCPHandler:
                         "definition": {
                             "type": "object",
                             "description": "Logic App definition (JSON format)"
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "description": "Workflow parameters (optional)"
+                        },
+                        "access_control": {
+                            "type": "object",
+                            "description": "Access control configuration (optional)"
                         }
                     },
                     "required": ["workflow_name", "definition"]
                 }
             },
             {
-                "name": "trigger_logic_app",
-                "description": "Manually trigger Logic App execution",
+                "name": "trigger_consumption_logic_app",
+                "description": "Trigger Consumption Logic App execution",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -134,14 +142,18 @@ class MCPHandler:
                             "type": "string",
                             "description": "Trigger name (default is manual)",
                             "default": "manual"
+                        },
+                        "payload": {
+                            "type": "object",
+                            "description": "Payload to send with trigger"
                         }
                     },
                     "required": ["workflow_name"]
                 }
             },
             {
-                "name": "get_run_history",
-                "description": "Get Logic App run history",
+                "name": "get_consumption_run_history",
+                "description": "Get Consumption Logic App run history",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -157,17 +169,69 @@ class MCPHandler:
                     },
                     "required": ["workflow_name"]
                 }
+            },
+            {
+                "name": "get_consumption_metrics",
+                "description": "Get Consumption-specific metrics and billing information",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "workflow_name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days to analyze",
+                            "default": 7
+                        }
+                    },
+                    "required": ["workflow_name"]
+                }
+            },
+            {
+                "name": "configure_http_trigger",
+                "description": "Configure HTTP trigger for Consumption Logic App",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "workflow_name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "trigger_config": {
+                            "type": "object",
+                            "description": "HTTP trigger configuration",
+                            "properties": {
+                                "method": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "HTTP methods allowed"
+                                },
+                                "schema": {
+                                    "type": "object",
+                                    "description": "Request schema"
+                                },
+                                "relative_path": {
+                                    "type": "string",
+                                    "description": "Relative path for the trigger"
+                                }
+                            }
+                        }
+                    },
+                    "required": ["workflow_name", "trigger_config"]
+                }
             }
         ]
         
         return {"result": {"tools": tools}}
     
     async def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle tool calls"""
+        """Handle tool calls for Consumption Logic Apps"""
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
         
-        if tool_name == "list_logic_apps":
+        if tool_name == "list_consumption_logic_apps":
             result = await self.logicapp_client.list_logic_apps()
             return {
                 "result": {
@@ -180,7 +244,7 @@ class MCPHandler:
                 }
             }
         
-        elif tool_name == "get_logic_app":
+        elif tool_name == "get_consumption_logic_app":
             workflow_name = arguments.get("workflow_name")
             result = await self.logicapp_client.get_logic_app(workflow_name)
             return {
@@ -194,25 +258,27 @@ class MCPHandler:
                 }
             }
         
-        elif tool_name == "create_logic_app":
+        elif tool_name == "create_consumption_logic_app":
             workflow_name = arguments.get("workflow_name")
             definition = arguments.get("definition")
-            result = await self.logicapp_client.create_logic_app(workflow_name, definition)
+            kwargs = {k: v for k, v in arguments.items() if k not in ["workflow_name", "definition"]}
+            result = await self.logicapp_client.create_logic_app(workflow_name, definition, **kwargs)
             return {
                 "result": {
                     "content": [
                         {
                             "type": "text",
-                            "text": f"Logic App '{workflow_name}' created: {result}"
+                            "text": f"Consumption Logic App '{workflow_name}' created: {result}"
                         }
                     ]
                 }
             }
         
-        elif tool_name == "trigger_logic_app":
+        elif tool_name == "trigger_consumption_logic_app":
             workflow_name = arguments.get("workflow_name")
             trigger_name = arguments.get("trigger_name", "manual")
-            result = await self.logicapp_client.trigger_logic_app(workflow_name, trigger_name)
+            kwargs = {k: v for k, v in arguments.items() if k not in ["workflow_name", "trigger_name"]}
+            result = await self.logicapp_client.trigger_logic_app(workflow_name, trigger_name, **kwargs)
             return {
                 "result": {
                     "content": [
@@ -224,7 +290,7 @@ class MCPHandler:
                 }
             }
         
-        elif tool_name == "get_run_history":
+        elif tool_name == "get_consumption_run_history":
             workflow_name = arguments.get("workflow_name")
             limit = arguments.get("limit", 10)
             result = await self.logicapp_client.get_run_history(workflow_name, limit)
@@ -239,6 +305,36 @@ class MCPHandler:
                 }
             }
         
+        elif tool_name == "get_consumption_metrics":
+            workflow_name = arguments.get("workflow_name")
+            days = arguments.get("days", 7)
+            result = await self.logicapp_client.get_consumption_metrics(workflow_name, days)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "configure_http_trigger":
+            workflow_name = arguments.get("workflow_name")
+            trigger_config = arguments.get("trigger_config")
+            result = await self.logicapp_client.configure_http_trigger(workflow_name, trigger_config)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"HTTP trigger configured for '{workflow_name}': {result}"
+                        }
+                    ]
+                }
+            }
+        
         else:
             return {
                 "error": {
@@ -248,12 +344,12 @@ class MCPHandler:
             }
     
     async def _handle_resources_list(self) -> Dict[str, Any]:
-        """Return list of available resources"""
+        """Return list of available resources for Consumption Logic Apps"""
         resources = [
             {
-                "uri": "logicapp://workflows",
-                "name": "Logic Apps List",
-                "description": "All Logic Apps in the current subscription",
+                "uri": "logicapp://consumption/workflows",
+                "name": "Consumption Logic Apps List",
+                "description": "All Consumption Logic Apps in the current subscription",
                 "mimeType": "application/json"
             }
         ]
@@ -261,10 +357,10 @@ class MCPHandler:
         return {"result": {"resources": resources}}
     
     async def _handle_resources_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Read resource content"""
+        """Read resource content for Consumption Logic Apps"""
         uri = params.get("uri")
         
-        if uri == "logicapp://workflows":
+        if uri == "logicapp://consumption/workflows":
             workflows = await self.logicapp_client.list_logic_apps()
             return {
                 "result": {

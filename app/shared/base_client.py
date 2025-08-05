@@ -1,7 +1,7 @@
 """
-Logic App Client
+Base Logic App Client
 
-Encapsulates Azure Logic Apps operations, including creation, querying, execution, monitoring, and other functionality
+Contains shared functionality for both Consumption and Standard Logic Apps.
 """
 
 import asyncio
@@ -12,11 +12,11 @@ from azure.mgmt.logic.models import Workflow, WorkflowTrigger
 import requests
 import json
 
-from .config import settings
+from ..config import settings
 
 
-class LogicAppClient:
-    """Azure Logic Apps Client"""
+class BaseLogicAppClient:
+    """Base Azure Logic Apps Client with shared functionality"""
     
     def __init__(self):
         self.subscription_id = settings.AZURE_SUBSCRIPTION_ID
@@ -47,7 +47,7 @@ class LogicAppClient:
             print(f"Failed to initialize Azure client: {e}")
     
     async def list_logic_apps(self) -> List[Dict[str, Any]]:
-        """List all Logic Apps"""
+        """List all Logic Apps (base implementation)"""
         if not self.client or not self.resource_group:
             return []
         
@@ -58,15 +58,10 @@ class LogicAppClient:
             
             logic_apps = []
             for workflow in workflows:
-                logic_apps.append({
-                    "name": workflow.name,
-                    "id": workflow.id,
-                    "location": workflow.location,
-                    "state": workflow.state,
-                    "definition": workflow.definition,
-                    "created_time": workflow.created_time.isoformat() if workflow.created_time else None,
-                    "changed_time": workflow.changed_time.isoformat() if workflow.changed_time else None,
-                })
+                logic_app_data = self._format_workflow_data(workflow)
+                # Filter by plan type if implemented in subclass
+                if self._is_compatible_plan_type(workflow):
+                    logic_apps.append(logic_app_data)
             
             return logic_apps
         except Exception as e:
@@ -84,65 +79,13 @@ class LogicAppClient:
                 workflow_name=workflow_name
             )
             
-            return {
-                "name": workflow.name,
-                "id": workflow.id,
-                "location": workflow.location,
-                "state": workflow.state,
-                "definition": workflow.definition,
-                "parameters": workflow.parameters,
-                "created_time": workflow.created_time.isoformat() if workflow.created_time else None,
-                "changed_time": workflow.changed_time.isoformat() if workflow.changed_time else None,
-            }
+            if not self._is_compatible_plan_type(workflow):
+                return None
+            
+            return self._format_workflow_data(workflow, include_details=True)
         except Exception as e:
             print(f"Error getting Logic App {workflow_name}: {e}")
             return None
-    
-    async def create_logic_app(self, workflow_name: str, definition: Dict[str, Any]) -> bool:
-        """Create new Logic App"""
-        if not self.client or not self.resource_group:
-            return False
-        
-        try:
-            workflow = Workflow(
-                location=settings.LOGIC_APP_LOCATION,
-                definition=definition
-            )
-            
-            result = self.client.workflows.create_or_update(
-                resource_group_name=self.resource_group,
-                workflow_name=workflow_name,
-                workflow=workflow
-            )
-            
-            return result is not None
-        except Exception as e:
-            print(f"Error creating Logic App {workflow_name}: {e}")
-            return False
-    
-    async def trigger_logic_app(self, workflow_name: str, trigger_name: str = "manual") -> Dict[str, Any]:
-        """Trigger Logic App execution"""
-        if not self.client or not self.resource_group:
-            return {"success": False, "error": "Client not initialized"}
-        
-        try:
-            # Get trigger callback URL
-            callback_url = self.client.workflow_triggers.list_callback_url(
-                resource_group_name=self.resource_group,
-                workflow_name=workflow_name,
-                trigger_name=trigger_name
-            )
-            
-            # Send POST request to trigger execution
-            response = requests.post(callback_url.value)
-            
-            return {
-                "success": response.status_code == 202,
-                "status_code": response.status_code,
-                "response": response.text
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
     
     async def get_run_history(self, workflow_name: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Get Logic App run history"""
@@ -171,3 +114,42 @@ class LogicAppClient:
         except Exception as e:
             print(f"Error getting run history for {workflow_name}: {e}")
             return []
+    
+    def _format_workflow_data(self, workflow, include_details: bool = False) -> Dict[str, Any]:
+        """Format workflow data for consistent output"""
+        data = {
+            "name": workflow.name,
+            "id": workflow.id,
+            "location": workflow.location,
+            "state": workflow.state,
+            "created_time": workflow.created_time.isoformat() if workflow.created_time else None,
+            "changed_time": workflow.changed_time.isoformat() if workflow.changed_time else None,
+            "plan_type": self._get_plan_type(),
+        }
+        
+        if include_details:
+            data.update({
+                "definition": workflow.definition,
+                "parameters": workflow.parameters,
+            })
+        
+        return data
+    
+    def _is_compatible_plan_type(self, workflow) -> bool:
+        """Check if workflow is compatible with this client type"""
+        # Base implementation accepts all - override in subclasses
+        return True
+    
+    def _get_plan_type(self) -> str:
+        """Get the plan type identifier"""
+        # Override in subclasses
+        return "unknown"
+    
+    # Abstract methods to be implemented by subclasses
+    async def create_logic_app(self, workflow_name: str, definition: Dict[str, Any], **kwargs) -> bool:
+        """Create new Logic App - implement in subclasses"""
+        raise NotImplementedError("Subclasses must implement create_logic_app")
+    
+    async def trigger_logic_app(self, workflow_name: str, trigger_name: str = "manual", **kwargs) -> Dict[str, Any]:
+        """Trigger Logic App execution - implement in subclasses"""
+        raise NotImplementedError("Subclasses must implement trigger_logic_app")

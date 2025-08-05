@@ -10,8 +10,10 @@ import uvicorn
 from typing import List, Dict, Any
 
 from .config import settings
-from .mcp_handler import MCPHandler
-from .logicapp_client import LogicAppClient
+from .consumption.mcp_handler import ConsumptionMCPHandler
+from .standard.mcp_handler import StandardMCPHandler
+from .consumption.client import ConsumptionLogicAppClient
+from .standard.client import StandardLogicAppClient
 
 # Create FastAPI application
 app = FastAPI(
@@ -30,8 +32,10 @@ app.add_middleware(
 )
 
 # Initialize components
-mcp_handler = MCPHandler()
-logicapp_client = LogicAppClient()
+consumption_mcp_handler = ConsumptionMCPHandler()
+standard_mcp_handler = StandardMCPHandler()
+consumption_client = ConsumptionLogicAppClient()
+standard_client = StandardLogicAppClient()
 
 @app.get("/")
 async def root():
@@ -44,19 +48,60 @@ async def health_check():
     return {"status": "healthy", "service": "logicapp-mcp"}
 
 @app.get("/logic-apps")
-async def list_logic_apps():
-    """List all Logic Apps"""
+async def list_all_logic_apps():
+    """List all Logic Apps (both Consumption and Standard)"""
     try:
-        apps = await logicapp_client.list_logic_apps()
-        return {"logic_apps": apps}
+        consumption_apps = await consumption_client.list_logic_apps()
+        standard_apps = await standard_client.list_logic_apps()
+        return {
+            "consumption_logic_apps": consumption_apps,
+            "standard_logic_apps": standard_apps,
+            "total_count": len(consumption_apps) + len(standard_apps)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/logic-apps/consumption")
+async def list_consumption_logic_apps():
+    """List Consumption Logic Apps only"""
+    try:
+        apps = await consumption_client.list_logic_apps()
+        return {"consumption_logic_apps": apps}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/logic-apps/standard")
+async def list_standard_logic_apps():
+    """List Standard Logic Apps only"""
+    try:
+        apps = await standard_client.list_logic_apps()
+        return {"standard_logic_apps": apps}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/mcp/consumption/request")
+async def handle_consumption_mcp_request(request: Dict[str, Any]):
+    """Handle MCP requests for Consumption Logic Apps"""
+    try:
+        response = await consumption_mcp_handler.handle_request(request)
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/mcp/standard/request")
+async def handle_standard_mcp_request(request: Dict[str, Any]):
+    """Handle MCP requests for Standard Logic Apps"""
+    try:
+        response = await standard_mcp_handler.handle_request(request)
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/mcp/request")
-async def handle_mcp_request(request: Dict[str, Any]):
-    """Handle MCP requests"""
+async def handle_generic_mcp_request(request: Dict[str, Any]):
+    """Handle generic MCP requests (routes to consumption by default)"""
     try:
-        response = await mcp_handler.handle_request(request)
+        response = await consumption_mcp_handler.handle_request(request)
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
