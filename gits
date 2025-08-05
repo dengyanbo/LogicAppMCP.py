@@ -1,0 +1,4 @@
+eval `ssh-agent -s`
+eval $(ssh-agent)
+ssh-add ~/.ssh/root_github_ssh
+
