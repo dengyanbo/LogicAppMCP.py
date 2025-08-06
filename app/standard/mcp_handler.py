@@ -268,6 +268,316 @@ class StandardMCPHandler:
                     },
                     "required": ["app_name"]
                 }
+            },
+            
+            # Azure CLI-based tools for Logic App Standard
+            {
+                "name": "cli_create_standard_logic_app",
+                "description": "Create Logic App Standard using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "storage_account": {
+                            "type": "string",
+                            "description": "Storage account for the Logic App"
+                        },
+                        "plan": {
+                            "type": "string",
+                            "description": "App Service plan name or resource ID"
+                        },
+                        "app_insights": {
+                            "type": "string",
+                            "description": "Application Insights name (optional)"
+                        },
+                        "deployment_container_image_name": {
+                            "type": "string",
+                            "description": "Container image name (optional)"
+                        },
+                        "https_only": {
+                            "type": "boolean",
+                            "description": "Redirect HTTP to HTTPS (optional)"
+                        },
+                        "runtime_version": {
+                            "type": "string",
+                            "description": "Runtime version (~14, ~16, ~18) (optional)"
+                        },
+                        "functions_version": {
+                            "type": "integer",
+                            "description": "Functions version (default: 4) (optional)"
+                        },
+                        "tags": {
+                            "type": "object",
+                            "description": "Tags for the Logic App (optional)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "cli_show_standard_logic_app",
+                "description": "Get Logic App Standard details using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "cli_list_standard_logic_apps",
+                "description": "List Logic App Standard instances using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "cli_start_standard_logic_app",
+                "description": "Start Logic App Standard using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "slot": {
+                            "type": "string",
+                            "description": "Deployment slot name (optional)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "cli_stop_standard_logic_app",
+                "description": "Stop Logic App Standard using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "slot": {
+                            "type": "string",
+                            "description": "Deployment slot name (optional)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "cli_restart_standard_logic_app",
+                "description": "Restart Logic App Standard using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "slot": {
+                            "type": "string",
+                            "description": "Deployment slot name (optional)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "cli_scale_standard_logic_app",
+                "description": "Scale Logic App Standard using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "instance_count": {
+                            "type": "integer",
+                            "description": "Number of instances to scale to"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        }
+                    },
+                    "required": ["name", "instance_count"]
+                }
+            },
+            {
+                "name": "cli_update_standard_logic_app",
+                "description": "Update Logic App Standard using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "plan": {
+                            "type": "string",
+                            "description": "App Service plan name or resource ID (optional)"
+                        },
+                        "slot": {
+                            "type": "string",
+                            "description": "Deployment slot name (optional)"
+                        },
+                        "set": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Set property values (optional)"
+                        },
+                        "add": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Add objects to list properties (optional)"
+                        },
+                        "remove": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Remove property or list elements (optional)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "cli_delete_standard_logic_app",
+                "description": "Delete Logic App Standard using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "slot": {
+                            "type": "string",
+                            "description": "Deployment slot name (optional)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "cli_config_appsettings_list",
+                "description": "List Logic App Standard settings using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "slot": {
+                            "type": "string",
+                            "description": "Deployment slot name (optional)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "cli_config_appsettings_set",
+                "description": "Set Logic App Standard settings using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "settings": {
+                            "type": "object",
+                            "description": "Settings to set as key-value pairs"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "slot": {
+                            "type": "string",
+                            "description": "Deployment slot name (optional)"
+                        }
+                    },
+                    "required": ["name", "settings"]
+                }
+            },
+            {
+                "name": "cli_config_appsettings_delete",
+                "description": "Delete Logic App Standard settings using Azure CLI",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the Logic App"
+                        },
+                        "setting_names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Names of settings to delete"
+                        },
+                        "resource_group": {
+                            "type": "string",
+                            "description": "Resource group name (optional, uses default if not provided)"
+                        },
+                        "slot": {
+                            "type": "string",
+                            "description": "Deployment slot name (optional)"
+                        }
+                    },
+                    "required": ["name", "setting_names"]
+                }
             }
         ]
         
@@ -401,6 +711,196 @@ class StandardMCPHandler:
             app_name = arguments.get("app_name")
             workflow_name = arguments.get("workflow_name")
             result = await self.logicapp_client.get_standard_metrics(app_name, workflow_name)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        # Azure CLI-based tool handlers
+        elif tool_name == "cli_create_standard_logic_app":
+            name = arguments.get("name")
+            kwargs = {k: v for k, v in arguments.items() if k != "name"}
+            result = await self.logicapp_client.cli_create_logic_app(name, **kwargs)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_show_standard_logic_app":
+            name = arguments.get("name")
+            resource_group = arguments.get("resource_group")
+            result = await self.logicapp_client.cli_show_logic_app(name, resource_group)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_list_standard_logic_apps":
+            resource_group = arguments.get("resource_group")
+            result = await self.logicapp_client.cli_list_logic_apps(resource_group)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_start_standard_logic_app":
+            name = arguments.get("name")
+            resource_group = arguments.get("resource_group")
+            slot = arguments.get("slot")
+            result = await self.logicapp_client.cli_start_logic_app(name, resource_group, slot)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_stop_standard_logic_app":
+            name = arguments.get("name")
+            resource_group = arguments.get("resource_group")
+            slot = arguments.get("slot")
+            result = await self.logicapp_client.cli_stop_logic_app(name, resource_group, slot)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_restart_standard_logic_app":
+            name = arguments.get("name")
+            resource_group = arguments.get("resource_group")
+            slot = arguments.get("slot")
+            result = await self.logicapp_client.cli_restart_logic_app(name, resource_group, slot)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_scale_standard_logic_app":
+            name = arguments.get("name")
+            instance_count = arguments.get("instance_count")
+            resource_group = arguments.get("resource_group")
+            result = await self.logicapp_client.cli_scale_logic_app(name, instance_count, resource_group)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_update_standard_logic_app":
+            name = arguments.get("name")
+            kwargs = {k: v for k, v in arguments.items() if k != "name"}
+            result = await self.logicapp_client.cli_update_logic_app(name, **kwargs)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_delete_standard_logic_app":
+            name = arguments.get("name")
+            resource_group = arguments.get("resource_group")
+            slot = arguments.get("slot")
+            result = await self.logicapp_client.cli_delete_logic_app(name, resource_group, slot)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_config_appsettings_list":
+            name = arguments.get("name")
+            resource_group = arguments.get("resource_group")
+            slot = arguments.get("slot")
+            result = await self.logicapp_client.cli_config_appsettings_list(name, resource_group, slot)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_config_appsettings_set":
+            name = arguments.get("name")
+            settings = arguments.get("settings")
+            resource_group = arguments.get("resource_group")
+            slot = arguments.get("slot")
+            result = await self.logicapp_client.cli_config_appsettings_set(name, settings, resource_group, slot)
+            return {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2, ensure_ascii=False)
+                        }
+                    ]
+                }
+            }
+        
+        elif tool_name == "cli_config_appsettings_delete":
+            name = arguments.get("name")
+            setting_names = arguments.get("setting_names")
+            resource_group = arguments.get("resource_group")
+            slot = arguments.get("slot")
+            result = await self.logicapp_client.cli_config_appsettings_delete(name, setting_names, resource_group, slot)
             return {
                 "result": {
                     "content": [

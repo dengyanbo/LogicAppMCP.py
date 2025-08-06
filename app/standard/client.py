@@ -10,6 +10,9 @@ from azure.mgmt.logic.models import Workflow
 from azure.mgmt.web import WebSiteManagementClient
 import requests
 import json
+import subprocess
+import asyncio
+import os
 
 from ..shared.base_client import BaseLogicAppClient
 from ..config import settings
@@ -33,6 +36,45 @@ class StandardLogicAppClient(BaseLogicAppClient):
                 )
         except Exception as e:
             print(f"Failed to initialize Web client: {e}")
+    
+    async def _run_az_command(self, command_args: List[str]) -> Dict[str, Any]:
+        """Execute Azure CLI command and return parsed JSON result"""
+        try:
+            # Build the full command
+            cmd = ["az"] + command_args + ["--output", "json"]
+            
+            # Run the command
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=os.environ.copy()
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode == 0:
+                if stdout:
+                    return {
+                        "success": True,
+                        "data": json.loads(stdout.decode()),
+                        "raw_output": stdout.decode()
+                    }
+                else:
+                    return {"success": True, "data": None, "raw_output": ""}
+            else:
+                return {
+                    "success": False,
+                    "error": stderr.decode() if stderr else "Unknown error",
+                    "return_code": process.returncode
+                }
+        except Exception as e:
+            return {"success": False, "error": str(e), "return_code": -1}
+    
+    async def _run_az_command_simple(self, command_args: List[str]) -> bool:
+        """Execute Azure CLI command and return simple success/failure"""
+        result = await self._run_az_command(command_args)
+        return result.get("success", False)
     
     def _get_plan_type(self) -> str:
         """Get the plan type identifier"""
@@ -258,3 +300,260 @@ class StandardLogicAppClient(BaseLogicAppClient):
         except Exception as e:
             print(f"Error getting Standard metrics for {app_name}: {e}")
             return {}
+    
+    # Azure CLI-based methods for Logic App Standard operations
+    
+    async def cli_create_logic_app(self, name: str, resource_group: str = None, 
+                                  storage_account: str = None, plan: str = None, 
+                                  **kwargs) -> Dict[str, Any]:
+        """Create Logic App using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "create",
+            "--name", name,
+            "--resource-group", resource_group
+        ]
+        
+        if storage_account:
+            command_args.extend(["--storage-account", storage_account])
+        if plan:
+            command_args.extend(["--plan", plan])
+        if kwargs.get("app_insights"):
+            command_args.extend(["--app-insights", kwargs["app_insights"]])
+        if kwargs.get("deployment_container_image_name"):
+            command_args.extend(["--deployment-container-image-name", kwargs["deployment_container_image_name"]])
+        if kwargs.get("https_only"):
+            command_args.extend(["--https-only", str(kwargs["https_only"]).lower()])
+        if kwargs.get("runtime_version"):
+            command_args.extend(["--runtime-version", kwargs["runtime_version"]])
+        if kwargs.get("functions_version"):
+            command_args.extend(["--functions-version", str(kwargs["functions_version"])])
+        if kwargs.get("tags"):
+            # Convert tags dict to string format: key=value key2=value2
+            if isinstance(kwargs["tags"], dict):
+                tag_strings = [f"{k}={v}" for k, v in kwargs["tags"].items()]
+                command_args.extend(["--tags"] + tag_strings)
+            else:
+                command_args.extend(["--tags", kwargs["tags"]])
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_show_logic_app(self, name: str, resource_group: str = None) -> Dict[str, Any]:
+        """Get Logic App details using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "show",
+            "--name", name,
+            "--resource-group", resource_group
+        ]
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_list_logic_apps(self, resource_group: str = None) -> Dict[str, Any]:
+        """List Logic Apps using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group:
+            return {"success": False, "error": "Missing resource group"}
+        
+        command_args = [
+            "logicapp", "list",
+            "--resource-group", resource_group
+        ]
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_start_logic_app(self, name: str, resource_group: str = None, 
+                                 slot: str = None) -> Dict[str, Any]:
+        """Start Logic App using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "start",
+            "--name", name,
+            "--resource-group", resource_group
+        ]
+        
+        if slot:
+            command_args.extend(["--slot", slot])
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_stop_logic_app(self, name: str, resource_group: str = None, 
+                                slot: str = None) -> Dict[str, Any]:
+        """Stop Logic App using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "stop",
+            "--name", name,
+            "--resource-group", resource_group
+        ]
+        
+        if slot:
+            command_args.extend(["--slot", slot])
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_restart_logic_app(self, name: str, resource_group: str = None, 
+                                   slot: str = None) -> Dict[str, Any]:
+        """Restart Logic App using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "restart",
+            "--name", name,
+            "--resource-group", resource_group
+        ]
+        
+        if slot:
+            command_args.extend(["--slot", slot])
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_scale_logic_app(self, name: str, instance_count: int, 
+                                 resource_group: str = None) -> Dict[str, Any]:
+        """Scale Logic App using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "scale",
+            "--name", name,
+            "--resource-group", resource_group,
+            "--number-of-workers", str(instance_count)
+        ]
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_update_logic_app(self, name: str, resource_group: str = None, 
+                                  plan: str = None, slot: str = None, **kwargs) -> Dict[str, Any]:
+        """Update Logic App using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "update",
+            "--name", name,
+            "--resource-group", resource_group
+        ]
+        
+        if plan:
+            command_args.extend(["--plan", plan])
+        if slot:
+            command_args.extend(["--slot", slot])
+        
+        # Handle generic update arguments
+        if kwargs.get("set"):
+            if isinstance(kwargs["set"], list):
+                for item in kwargs["set"]:
+                    command_args.extend(["--set", item])
+            else:
+                command_args.extend(["--set", kwargs["set"]])
+        
+        if kwargs.get("add"):
+            if isinstance(kwargs["add"], list):
+                for item in kwargs["add"]:
+                    command_args.extend(["--add", item])
+            else:
+                command_args.extend(["--add", kwargs["add"]])
+        
+        if kwargs.get("remove"):
+            if isinstance(kwargs["remove"], list):
+                for item in kwargs["remove"]:
+                    command_args.extend(["--remove", item])
+            else:
+                command_args.extend(["--remove", kwargs["remove"]])
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_delete_logic_app(self, name: str, resource_group: str = None, 
+                                  slot: str = None) -> Dict[str, Any]:
+        """Delete Logic App using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "delete",
+            "--name", name,
+            "--resource-group", resource_group,
+            "--yes"  # Skip confirmation
+        ]
+        
+        if slot:
+            command_args.extend(["--slot", slot])
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_config_appsettings_list(self, name: str, resource_group: str = None, 
+                                         slot: str = None) -> Dict[str, Any]:
+        """List Logic App settings using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "config", "appsettings", "list",
+            "--name", name,
+            "--resource-group", resource_group
+        ]
+        
+        if slot:
+            command_args.extend(["--slot", slot])
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_config_appsettings_set(self, name: str, settings: Dict[str, str], 
+                                        resource_group: str = None, slot: str = None) -> Dict[str, Any]:
+        """Set Logic App settings using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name or not settings:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "config", "appsettings", "set",
+            "--name", name,
+            "--resource-group", resource_group
+        ]
+        
+        # Add settings in key=value format
+        for key, value in settings.items():
+            command_args.extend(["--settings", f"{key}={value}"])
+        
+        if slot:
+            command_args.extend(["--slot", slot])
+        
+        return await self._run_az_command(command_args)
+    
+    async def cli_config_appsettings_delete(self, name: str, setting_names: List[str], 
+                                           resource_group: str = None, slot: str = None) -> Dict[str, Any]:
+        """Delete Logic App settings using Azure CLI"""
+        resource_group = resource_group or self.resource_group
+        if not resource_group or not name or not setting_names:
+            return {"success": False, "error": "Missing required parameters"}
+        
+        command_args = [
+            "logicapp", "config", "appsettings", "delete",
+            "--name", name,
+            "--resource-group", resource_group,
+            "--setting-names"
+        ] + setting_names
+        
+        if slot:
+            command_args.extend(["--slot", slot])
+        
+        return await self._run_az_command(command_args)
