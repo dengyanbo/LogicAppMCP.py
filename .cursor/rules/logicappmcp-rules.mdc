@@ -1,0 +1,48 @@
+---
+alwaysApply: true
+---
+
+# Logic App MCP Project Rules
+
+rules:
+  # Python Environment & Tools
+  - selector: "python"
+    environment: 
+      type: "uv"
+      command: "uv run python"
+      install: "uv sync"
+      activate: "uv run"
+    description: "Use uv for dependency management. Always use `uv run python` and `uv sync`."
+
+  # Code Quality Standards
+  - selector: "**/*.py"
+    rules:
+      - Use type hints and async/await patterns
+      - Include docstrings and handle exceptions gracefully
+      - Use f-strings and organize imports properly
+      - Never hardcode secrets or credentials
+    description: "Maintain high code quality with typing, documentation, and security."
+
+  # MCP Protocol Compliance
+  - selector: "**/mcp_handler.py"
+    rules:
+      - Follow MCP 2024-11-05 specification exactly
+      - Use proper inputSchema validation and error codes (-32601, -32602, -32603)
+      - Return correct format (result/error structure) with request IDs
+    description: "Ensure strict MCP protocol compliance."
+
+  # Azure Integration
+  - selector: "**/client.py"
+    rules:
+      - Use Azure SDK (azure-mgmt-logic) with proper authentication
+      - Include serialization methods for Azure objects
+      - Handle Azure errors and rate limiting appropriately
+    description: "Follow Azure SDK patterns and handle Logic Apps requirements."
+
+  # Project Organization
+  - selector: "app/**"
+    rules:
+      - Separate consumption/standard tiers into distinct modules
+      - Use shared base classes and proper __init__.py exports
+      - Follow consistent naming and clear separation of concerns
+    description: "Maintain logical module organization and clear boundaries."
