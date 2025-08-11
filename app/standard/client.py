@@ -7,8 +7,9 @@ Standard Logic Apps run on dedicated App Service plans with more control and fea
 
 from typing import Dict, Any, List, Optional
 from azure.mgmt.logic.models import Workflow
+import logging
 from azure.mgmt.web import WebSiteManagementClient
-import requests
+import httpx
 import json
 import subprocess
 import asyncio
@@ -29,13 +30,13 @@ class StandardLogicAppClient(BaseLogicAppClient):
     def _initialize_web_client(self):
         """Initialize Web client for App Service operations"""
         try:
-            if self.client and self.client._config.credential:
+            if self.credential and self.subscription_id:
                 self.web_client = WebSiteManagementClient(
-                    credential=self.client._config.credential,
+                    credential=self.credential,
                     subscription_id=self.subscription_id
                 )
         except Exception as e:
-            print(f"Failed to initialize Web client: {e}")
+            logging.exception("Failed to initialize Web client: %s", e)
     
     async def _run_az_command(self, command_args: List[str]) -> Dict[str, Any]:
         """Execute Azure CLI command and return parsed JSON result"""
@@ -69,6 +70,7 @@ class StandardLogicAppClient(BaseLogicAppClient):
                     "return_code": process.returncode
                 }
         except Exception as e:
+            logging.exception("Azure CLI execution failed: %s", e)
             return {"success": False, "error": str(e), "return_code": -1}
     
     async def _run_az_command_simple(self, command_args: List[str]) -> bool:
@@ -134,7 +136,7 @@ class StandardLogicAppClient(BaseLogicAppClient):
             
             return result is not None
         except Exception as e:
-            print(f"Error creating Standard Logic App {workflow_name}: {e}")
+            logging.exception("Error creating Standard Logic App %s: %s", workflow_name, e)
             return False
     
     async def trigger_logic_app(self, workflow_name: str, trigger_name: str = "manual", **kwargs) -> Dict[str, Any]:
@@ -144,10 +146,11 @@ class StandardLogicAppClient(BaseLogicAppClient):
         
         try:
             # Get trigger callback URL
-            callback_url = self.client.workflow_triggers.list_callback_url(
+            callback_url = await self._call_sync(
+                self.client.workflow_triggers.list_callback_url,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                trigger_name=trigger_name
+                trigger_name=trigger_name,
             )
             
             # Prepare request data for standard
@@ -159,20 +162,20 @@ class StandardLogicAppClient(BaseLogicAppClient):
                 headers.update(kwargs["auth_header"])
             
             # Send POST request to trigger execution
-            response = requests.post(
-                callback_url.value, 
-                json=data, 
-                headers=headers,
-                timeout=kwargs.get("timeout", 30)
-            )
-            
-            return {
-                "success": response.status_code == 202,
-                "status_code": response.status_code,
-                "response": response.text,
-                "plan_type": "standard"
-            }
+            async with httpx.AsyncClient(timeout=kwargs.get("timeout", 30)) as client:
+                response = await client.post(
+                    callback_url.value,
+                    json=data,
+                    headers=headers,
+                )
+                return {
+                    "success": response.status_code == 202,
+                    "status_code": response.status_code,
+                    "response": response.text,
+                    "plan_type": "standard",
+                }
         except Exception as e:
+            logging.exception("Error triggering Standard Logic App %s: %s", workflow_name, e)
             return {"success": False, "error": str(e), "plan_type": "standard"}
     
     async def get_app_service_info(self, app_name: str) -> Dict[str, Any]:
@@ -181,9 +184,10 @@ class StandardLogicAppClient(BaseLogicAppClient):
             return {}
         
         try:
-            site = self.web_client.web_apps.get(
+            site = await self._call_sync(
+                self.web_client.web_apps.get,
                 resource_group_name=self.resource_group,
-                name=app_name
+                name=app_name,
             )
             
             return {
@@ -199,7 +203,7 @@ class StandardLogicAppClient(BaseLogicAppClient):
                 "plan_type": "standard"
             }
         except Exception as e:
-            print(f"Error getting App Service info for {app_name}: {e}")
+            logging.exception("Error getting App Service info for %s: %s", app_name, e)
             return {}
     
     async def scale_app_service_plan(self, plan_name: str, instance_count: int, sku_name: str = None) -> bool:
@@ -209,9 +213,10 @@ class StandardLogicAppClient(BaseLogicAppClient):
         
         try:
             # Get current plan
-            plan = self.web_client.app_service_plans.get(
+            plan = await self._call_sync(
+                self.web_client.app_service_plans.get,
                 resource_group_name=self.resource_group,
-                name=plan_name
+                name=plan_name,
             )
             
             # Update scaling settings
@@ -220,15 +225,16 @@ class StandardLogicAppClient(BaseLogicAppClient):
                 plan.sku.name = sku_name
             
             # Apply changes
-            result = self.web_client.app_service_plans.create_or_update(
+            result = await self._call_sync(
+                self.web_client.app_service_plans.create_or_update,
                 resource_group_name=self.resource_group,
                 name=plan_name,
-                app_service_plan=plan
+                app_service_plan=plan,
             )
             
             return result is not None
         except Exception as e:
-            print(f"Error scaling App Service plan {plan_name}: {e}")
+            logging.exception("Error scaling App Service plan %s: %s", plan_name, e)
             return False
     
     async def configure_vnet_integration(self, app_name: str, vnet_config: Dict[str, Any]) -> bool:
@@ -246,16 +252,17 @@ class StandardLogicAppClient(BaseLogicAppClient):
                 "routes": vnet_config.get("routes", [])
             }
             
-            result = self.web_client.web_apps.create_or_update_vnet_connection(
+            result = await self._call_sync(
+                self.web_client.web_apps.create_or_update_vnet_connection,
                 resource_group_name=self.resource_group,
                 name=app_name,
                 vnet_name=vnet_config["vnet_name"],
-                connection_envelope=vnet_info
+                connection_envelope=vnet_info,
             )
             
             return result is not None
         except Exception as e:
-            print(f"Error configuring VNET integration for {app_name}: {e}")
+            logging.exception("Error configuring VNET integration for %s: %s", app_name, e)
             return False
     
     async def get_standard_metrics(self, app_name: str, workflow_name: str = None) -> Dict[str, Any]:
@@ -265,10 +272,11 @@ class StandardLogicAppClient(BaseLogicAppClient):
         
         try:
             # Get App Service metrics
-            metrics = self.web_client.web_apps.list_metrics(
+            metrics = await self._call_sync(
+                self.web_client.web_apps.list_metrics,
                 resource_group_name=self.resource_group,
                 name=app_name,
-                details=True
+                details=True,
             )
             
             # Process metrics for Standard Logic Apps
@@ -281,14 +289,16 @@ class StandardLogicAppClient(BaseLogicAppClient):
             }
             
             for metric in metrics:
-                if metric.name.value == "CpuPercentage":
-                    processed_metrics["cpu_percentage"] = [point.average for point in metric.metric_values if point.average]
-                elif metric.name.value == "MemoryPercentage":
-                    processed_metrics["memory_percentage"] = [point.average for point in metric.metric_values if point.average]
-                elif metric.name.value == "Requests":
-                    processed_metrics["http_requests"] = [point.total for point in metric.metric_values if point.total]
-                elif metric.name.value == "AverageResponseTime":
-                    processed_metrics["response_time"] = [point.average for point in metric.metric_values if point.average]
+                metric_name = getattr(getattr(metric, "name", None), "value", None) or getattr(metric, "name", None)
+                metric_values = getattr(metric, "metric_values", []) or []
+                if metric_name == "CpuPercentage":
+                    processed_metrics["cpu_percentage"] = [getattr(point, "average", None) for point in metric_values if getattr(point, "average", None) is not None]
+                elif metric_name == "MemoryPercentage":
+                    processed_metrics["memory_percentage"] = [getattr(point, "average", None) for point in metric_values if getattr(point, "average", None) is not None]
+                elif metric_name == "Requests":
+                    processed_metrics["http_requests"] = [getattr(point, "total", None) for point in metric_values if getattr(point, "total", None) is not None]
+                elif metric_name == "AverageResponseTime":
+                    processed_metrics["response_time"] = [getattr(point, "average", None) for point in metric_values if getattr(point, "average", None) is not None]
             
             # Add workflow-specific metrics if specified
             if workflow_name:
@@ -298,7 +308,7 @@ class StandardLogicAppClient(BaseLogicAppClient):
             
             return processed_metrics
         except Exception as e:
-            print(f"Error getting Standard metrics for {app_name}: {e}")
+            logging.exception("Error getting Standard metrics for %s: %s", app_name, e)
             return {}
     
     # Azure CLI-based methods for Logic App Standard operations

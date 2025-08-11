@@ -25,6 +25,8 @@ class ConsumptionMCPHandler:
                 "logging": True
             }
         }
+        self._tools_cache = None
+        self._required_by_tool: Dict[str, List[str]] = {}
     
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle MCP requests"""
@@ -33,15 +35,25 @@ class ConsumptionMCPHandler:
         request_id = request.get("id")
         
         try:
+            # Basic input validation per MCP 2024-11-05
+            if not isinstance(method, str):
+                return {
+                    "id": request_id,
+                    "error": {"code": -32600, "message": "Invalid Request: 'method' must be a string"},
+                }
             if method == "initialize":
                 response = await self._handle_initialize(params)
             elif method == "tools/list":
                 response = await self._handle_tools_list()
             elif method == "tools/call":
+                if not isinstance(params, dict):
+                    return {"id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
                 response = await self._handle_tools_call(params)
             elif method == "resources/list":
                 response = await self._handle_resources_list()
             elif method == "resources/read":
+                if not isinstance(params, dict):
+                    return {"id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
                 response = await self._handle_resources_read(params)
             else:
                 response = {
@@ -815,7 +827,14 @@ class ConsumptionMCPHandler:
                 }
             }
         ]
-        
+        # Cache and extract required args for validation
+        self._tools_cache = tools
+        self._required_by_tool = {}
+        for tool in tools:
+            name = tool.get("name")
+            required = tool.get("inputSchema", {}).get("required", []) or []
+            if name:
+                self._required_by_tool[name] = required
         return {"result": {"tools": tools}}
     
     async def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -824,6 +843,18 @@ class ConsumptionMCPHandler:
         arguments = params.get("arguments", {})
         
         try:
+            # Ensure we have tool definitions loaded for validation
+            if not self._tools_cache:
+                await self._handle_tools_list()
+            # Validate required args
+            missing = [k for k in self._required_by_tool.get(tool_name, []) if k not in arguments or arguments.get(k) in (None, "")]
+            if missing:
+                return {
+                    "error": {
+                        "code": -32602,
+                        "message": f"Missing required parameter(s) for {tool_name}: {', '.join(missing)}",
+                    }
+                }
             # Workflow Management APIs
             if tool_name == "list_consumption_logic_apps":
                 result = await self.logicapp_client.list_logic_apps()

@@ -7,10 +7,13 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi",
     "uvicorn",
-    "requests",
+    "httpx",
     "azure-identity",
     "azure-mgmt-logic",
     "azure-mgmt-web",
     "pydantic",
-    "pydantic-settings"
+    "pydantic-settings",
+    "pytest",
+    "pytest-asyncio",
+    "httpx[http2]"
 ]

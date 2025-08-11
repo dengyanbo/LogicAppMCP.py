@@ -7,7 +7,8 @@ Consumption Logic Apps are serverless, pay-per-execution, and Azure-managed.
 
 from typing import Dict, Any, List, Optional
 from azure.mgmt.logic.models import Workflow
-import requests
+import logging
+import httpx
 
 from ..shared.base_client import BaseLogicAppClient
 from ..config import settings
@@ -53,15 +54,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             
             workflow = Workflow(**workflow_params)
             
-            result = self.client.workflows.create_or_update(
+            result = await self._call_sync(
+                self.client.workflows.create_or_update,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                workflow=workflow
+                workflow=workflow,
             )
             
             return result is not None
         except Exception as e:
-            print(f"Error creating Consumption Logic App {workflow_name}: {e}")
+            logging.exception("Error creating Consumption Logic App %s: %s", workflow_name, e)
             return False
     
     async def trigger_logic_app(self, workflow_name: str, trigger_name: str = "manual", **kwargs) -> Dict[str, Any]:
@@ -71,10 +73,11 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
         
         try:
             # Get trigger callback URL
-            callback_url = self.client.workflow_triggers.list_callback_url(
+            callback_url = await self._call_sync(
+                self.client.workflow_triggers.list_callback_url,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                trigger_name=trigger_name
+                trigger_name=trigger_name,
             )
             
             # Prepare request data for consumption
@@ -82,19 +85,20 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             data = kwargs.get("payload", {})
             
             # Send POST request to trigger execution
-            response = requests.post(
-                callback_url.value, 
-                json=data, 
-                headers=headers
-            )
-            
-            return {
-                "success": response.status_code == 202,
-                "status_code": response.status_code,
-                "response": response.text,
-                "plan_type": "consumption"
-            }
+            async with httpx.AsyncClient(timeout=kwargs.get("timeout", 30)) as client:
+                response = await client.post(
+                    callback_url.value,
+                    json=data,
+                    headers=headers,
+                )
+                return {
+                    "success": response.status_code == 202,
+                    "status_code": response.status_code,
+                    "response": response.text,
+                    "plan_type": "consumption",
+                }
         except Exception as e:
+            logging.exception("Error triggering Consumption Logic App %s: %s", workflow_name, e)
             return {"success": False, "error": str(e), "plan_type": "consumption"}
     
     async def get_consumption_metrics(self, workflow_name: str, days: int = 7) -> Dict[str, Any]:
@@ -104,7 +108,8 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
         
         try:
             # Get workflow runs for billing analysis
-            runs = self.client.workflow_runs.list(
+            runs = await self._list_sync(
+                self.client.workflow_runs.list,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
                 top=1000  # Get more runs for analysis
@@ -131,7 +136,7 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
                 "plan_type": "consumption"
             }
         except Exception as e:
-            print(f"Error getting consumption metrics for {workflow_name}: {e}")
+            logging.exception("Error getting consumption metrics for %s: %s", workflow_name, e)
             return {}
     
     # Additional Workflow Management Methods
@@ -142,9 +147,10 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
         
         try:
             # Get existing workflow
-            existing_workflow = self.client.workflows.get(
+            existing_workflow = await self._call_sync(
+                self.client.workflows.get,
                 resource_group_name=self.resource_group,
-                workflow_name=workflow_name
+                workflow_name=workflow_name,
             )
             
             # Prepare update parameters
@@ -157,15 +163,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             
             workflow = Workflow(**workflow_params)
             
-            result = self.client.workflows.create_or_update(
+            result = await self._call_sync(
+                self.client.workflows.create_or_update,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                workflow=workflow
+                workflow=workflow,
             )
             
             return result is not None
         except Exception as e:
-            print(f"Error updating Logic App {workflow_name}: {e}")
+            logging.exception("Error updating Logic App %s: %s", workflow_name, e)
             return False
     
     async def delete_logic_app(self, workflow_name: str) -> bool:
@@ -174,13 +181,14 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return False
         
         try:
-            self.client.workflows.delete(
+            await self._call_sync(
+                self.client.workflows.delete,
                 resource_group_name=self.resource_group,
-                workflow_name=workflow_name
+                workflow_name=workflow_name,
             )
             return True
         except Exception as e:
-            print(f"Error deleting Logic App {workflow_name}: {e}")
+            logging.exception("Error deleting Logic App %s: %s", workflow_name, e)
             return False
     
     async def enable_logic_app(self, workflow_name: str) -> bool:
@@ -189,13 +197,14 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return False
         
         try:
-            self.client.workflows.enable(
+            await self._call_sync(
+                self.client.workflows.enable,
                 resource_group_name=self.resource_group,
-                workflow_name=workflow_name
+                workflow_name=workflow_name,
             )
             return True
         except Exception as e:
-            print(f"Error enabling Logic App {workflow_name}: {e}")
+            logging.exception("Error enabling Logic App %s: %s", workflow_name, e)
             return False
     
     async def disable_logic_app(self, workflow_name: str) -> bool:
@@ -204,13 +213,14 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return False
         
         try:
-            self.client.workflows.disable(
+            await self._call_sync(
+                self.client.workflows.disable,
                 resource_group_name=self.resource_group,
-                workflow_name=workflow_name
+                workflow_name=workflow_name,
             )
             return True
         except Exception as e:
-            print(f"Error disabling Logic App {workflow_name}: {e}")
+            logging.exception("Error disabling Logic App %s: %s", workflow_name, e)
             return False
     
     async def validate_logic_app(self, **kwargs) -> Dict[str, Any]:
@@ -233,21 +243,24 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             
             if workflow_name:
                 # Validate existing workflow
-                result = self.client.workflows.validate(
+                result = await self._call_sync(
+                    self.client.workflows.validate,
                     resource_group_name=self.resource_group,
                     workflow_name=workflow_name,
-                    workflow=workflow
+                    workflow=workflow,
                 )
             else:
                 # Validate new workflow definition
-                result = self.client.workflows.validate_workflow(
+                result = await self._call_sync(
+                    self.client.workflows.validate_workflow,
                     resource_group_name=self.resource_group,
                     location=settings.LOGIC_APP_LOCATION,
-                    workflow=workflow
+                    workflow=workflow,
                 )
             
             return {"valid": True, "result": result}
         except Exception as e:
+            logging.exception("Error validating Logic App %s: %s", kwargs.get("workflow_name"), e)
             return {"valid": False, "error": str(e)}
     
     async def get_callback_url(self, workflow_name: str, trigger_name: str = "manual") -> Dict[str, Any]:
@@ -256,14 +269,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return {"error": "Client not initialized"}
         
         try:
-            callback_url = self.client.workflow_triggers.list_callback_url(
+            callback_url = await self._call_sync(
+                self.client.workflow_triggers.list_callback_url,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                trigger_name=trigger_name
+                trigger_name=trigger_name,
             )
             
             return {"callback_url": callback_url.value}
         except Exception as e:
+            logging.exception("Error getting callback URL for %s/%s: %s", workflow_name, trigger_name, e)
             return {"error": str(e)}
     
     async def get_swagger_definition(self, workflow_name: str) -> Dict[str, Any]:
@@ -272,13 +287,15 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return {"error": "Client not initialized"}
         
         try:
-            swagger = self.client.workflows.list_swagger(
+            swagger = await self._call_sync(
+                self.client.workflows.list_swagger,
                 resource_group_name=self.resource_group,
-                workflow_name=workflow_name
+                workflow_name=workflow_name,
             )
             
             return swagger
         except Exception as e:
+            logging.exception("Error getting swagger for %s: %s", workflow_name, e)
             return {"error": str(e)}
     
     # Workflow Runs Management
@@ -288,16 +305,17 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            runs = self.client.workflow_runs.list(
+            runs = await self._list_sync(
+                self.client.workflow_runs.list,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
                 top=top,
-                filter=filter_expr
+                filter=filter_expr,
             )
             
             return [self._serialize_workflow_run(run) for run in runs]
         except Exception as e:
-            print(f"Error listing workflow runs for {workflow_name}: {e}")
+            logging.exception("Error listing workflow runs for %s: %s", workflow_name, e)
             return []
     
     async def get_workflow_run(self, workflow_name: str, run_name: str) -> Dict[str, Any]:
@@ -306,15 +324,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return {}
         
         try:
-            run = self.client.workflow_runs.get(
+            run = await self._call_sync(
+                self.client.workflow_runs.get,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                run_name=run_name
+                run_name=run_name,
             )
             
             return self._serialize_workflow_run(run)
         except Exception as e:
-            print(f"Error getting workflow run {run_name}: {e}")
+            logging.exception("Error getting workflow run %s: %s", run_name, e)
             return {}
     
     async def cancel_workflow_run(self, workflow_name: str, run_name: str) -> bool:
@@ -323,14 +342,15 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return False
         
         try:
-            self.client.workflow_runs.cancel(
+            await self._call_sync(
+                self.client.workflow_runs.cancel,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                run_name=run_name
+                run_name=run_name,
             )
             return True
         except Exception as e:
-            print(f"Error cancelling workflow run {run_name}: {e}")
+            logging.exception("Error cancelling workflow run %s: %s", run_name, e)
             return False
     
     async def resubmit_workflow_run(self, workflow_name: str, run_name: str) -> bool:
@@ -340,29 +360,31 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
         
         try:
             # Get the original run to resubmit
-            original_run = self.client.workflow_runs.get(
+            original_run = await self._call_sync(
+                self.client.workflow_runs.get,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                run_name=run_name
+                run_name=run_name,
             )
             
             # Trigger the workflow again with the same inputs
-            callback_url = self.client.workflow_triggers.list_callback_url(
+            callback_url = await self._call_sync(
+                self.client.workflow_triggers.list_callback_url,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                trigger_name="manual"  # Assuming manual trigger for resubmission
+                trigger_name="manual",  # Assuming manual trigger for resubmission
             )
             
             # Send POST request to resubmit
-            response = requests.post(
-                callback_url.value,
-                json=original_run.trigger.inputs if hasattr(original_run.trigger, 'inputs') else {},
-                headers={"Content-Type": "application/json"}
-            )
-            
-            return response.status_code == 202
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    callback_url.value,
+                    json=getattr(getattr(original_run, "trigger", {}), "inputs", {}) or {},
+                    headers={"Content-Type": "application/json"},
+                )
+                return response.status_code == 202
         except Exception as e:
-            print(f"Error resubmitting workflow run {run_name}: {e}")
+            logging.exception("Error resubmitting workflow run %s: %s", run_name, e)
             return False
     
     # Workflow Triggers Management
@@ -372,14 +394,15 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            triggers = self.client.workflow_triggers.list(
+            triggers = await self._list_sync(
+                self.client.workflow_triggers.list,
                 resource_group_name=self.resource_group,
-                workflow_name=workflow_name
+                workflow_name=workflow_name,
             )
             
             return [self._serialize_workflow_trigger(trigger) for trigger in triggers]
         except Exception as e:
-            print(f"Error listing workflow triggers for {workflow_name}: {e}")
+            logging.exception("Error listing workflow triggers for %s: %s", workflow_name, e)
             return []
     
     async def get_workflow_trigger(self, workflow_name: str, trigger_name: str) -> Dict[str, Any]:
@@ -388,15 +411,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return {}
         
         try:
-            trigger = self.client.workflow_triggers.get(
+            trigger = await self._call_sync(
+                self.client.workflow_triggers.get,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                trigger_name=trigger_name
+                trigger_name=trigger_name,
             )
             
             return self._serialize_workflow_trigger(trigger)
         except Exception as e:
-            print(f"Error getting workflow trigger {trigger_name}: {e}")
+            logging.exception("Error getting workflow trigger %s: %s", trigger_name, e)
             return {}
     
     async def run_workflow_trigger(self, workflow_name: str, trigger_name: str) -> bool:
@@ -405,14 +429,15 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return False
         
         try:
-            self.client.workflow_triggers.run(
+            await self._call_sync(
+                self.client.workflow_triggers.run,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                trigger_name=trigger_name
+                trigger_name=trigger_name,
             )
             return True
         except Exception as e:
-            print(f"Error running workflow trigger {trigger_name}: {e}")
+            logging.exception("Error running workflow trigger %s: %s", trigger_name, e)
             return False
     
     async def reset_workflow_trigger(self, workflow_name: str, trigger_name: str) -> bool:
@@ -421,14 +446,15 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return False
         
         try:
-            self.client.workflow_triggers.reset(
+            await self._call_sync(
+                self.client.workflow_triggers.reset,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                trigger_name=trigger_name
+                trigger_name=trigger_name,
             )
             return True
         except Exception as e:
-            print(f"Error resetting workflow trigger {trigger_name}: {e}")
+            logging.exception("Error resetting workflow trigger %s: %s", trigger_name, e)
             return False
     
     async def get_trigger_schema(self, workflow_name: str, trigger_name: str) -> Dict[str, Any]:
@@ -437,15 +463,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return {}
         
         try:
-            schema = self.client.workflow_triggers.get_schema_json(
+            schema = await self._call_sync(
+                self.client.workflow_triggers.get_schema_json,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                trigger_name=trigger_name
+                trigger_name=trigger_name,
             )
             
             return schema
         except Exception as e:
-            print(f"Error getting trigger schema for {trigger_name}: {e}")
+            logging.exception("Error getting trigger schema for %s: %s", trigger_name, e)
             return {}
     
     # Workflow Trigger Histories
@@ -455,16 +482,17 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            histories = self.client.workflow_trigger_histories.list(
+            histories = await self._list_sync(
+                self.client.workflow_trigger_histories.list,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
                 trigger_name=trigger_name,
-                top=top
+                top=top,
             )
             
             return [self._serialize_trigger_history(history) for history in histories]
         except Exception as e:
-            print(f"Error listing trigger histories for {trigger_name}: {e}")
+            logging.exception("Error listing trigger histories for %s: %s", trigger_name, e)
             return []
     
     async def get_trigger_history(self, workflow_name: str, trigger_name: str, history_name: str) -> Dict[str, Any]:
@@ -473,16 +501,17 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return {}
         
         try:
-            history = self.client.workflow_trigger_histories.get(
+            history = await self._call_sync(
+                self.client.workflow_trigger_histories.get,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
                 trigger_name=trigger_name,
-                history_name=history_name
+                history_name=history_name,
             )
             
             return self._serialize_trigger_history(history)
         except Exception as e:
-            print(f"Error getting trigger history {history_name}: {e}")
+            logging.exception("Error getting trigger history %s: %s", history_name, e)
             return {}
     
     # Workflow Run Actions
@@ -492,16 +521,17 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            actions = self.client.workflow_run_actions.list(
+            actions = await self._list_sync(
+                self.client.workflow_run_actions.list,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
                 run_name=run_name,
-                top=top
+                top=top,
             )
             
             return [self._serialize_workflow_run_action(action) for action in actions]
         except Exception as e:
-            print(f"Error listing workflow run actions for {run_name}: {e}")
+            logging.exception("Error listing workflow run actions for %s: %s", run_name, e)
             return []
     
     async def get_workflow_run_action(self, workflow_name: str, run_name: str, action_name: str) -> Dict[str, Any]:
@@ -510,16 +540,17 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return {}
         
         try:
-            action = self.client.workflow_run_actions.get(
+            action = await self._call_sync(
+                self.client.workflow_run_actions.get,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
                 run_name=run_name,
-                action_name=action_name
+                action_name=action_name,
             )
             
             return self._serialize_workflow_run_action(action)
         except Exception as e:
-            print(f"Error getting workflow run action {action_name}: {e}")
+            logging.exception("Error getting workflow run action %s: %s", action_name, e)
             return {}
     
     # Workflow Versions
@@ -529,15 +560,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            versions = self.client.workflow_versions.list(
+            versions = await self._list_sync(
+                self.client.workflow_versions.list,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                top=top
+                top=top,
             )
             
             return [self._serialize_workflow_version(version) for version in versions]
         except Exception as e:
-            print(f"Error listing workflow versions for {workflow_name}: {e}")
+            logging.exception("Error listing workflow versions for %s: %s", workflow_name, e)
             return []
     
     async def get_workflow_version(self, workflow_name: str, version_id: str) -> Dict[str, Any]:
@@ -546,21 +578,23 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return {}
         
         try:
-            version = self.client.workflow_versions.get(
+            version = await self._call_sync(
+                self.client.workflow_versions.get,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                version_id=version_id
+                version_id=version_id,
             )
             
             return self._serialize_workflow_version(version)
         except Exception as e:
-            print(f"Error getting workflow version {version_id}: {e}")
+            logging.exception("Error getting workflow version %s: %s", version_id, e)
             return {}
 
     async def configure_http_trigger(self, workflow_name: str, trigger_config: Dict[str, Any]) -> bool:
         """Configure HTTP trigger for consumption Logic App"""
         try:
-            workflow = self.client.workflows.get(
+            workflow = await self._call_sync(
+                self.client.workflows.get,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name
             )
@@ -588,7 +622,8 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
                 parameters=workflow.parameters
             )
             
-            result = self.client.workflows.create_or_update(
+            result = await self._call_sync(
+                self.client.workflows.create_or_update,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
                 workflow=updated_workflow
@@ -596,7 +631,7 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             
             return result is not None
         except Exception as e:
-            print(f"Error configuring HTTP trigger for {workflow_name}: {e}")
+            logging.exception("Error configuring HTTP trigger for %s: %s", workflow_name, e)
             return False
     
     # Helper methods for serialization
@@ -714,15 +749,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
                 sku=IntegrationAccountSku(name=sku)
             )
             
-            result = self.client.integration_accounts.create_or_update(
+            result = await self._call_sync(
+                self.client.integration_accounts.create_or_update,
                 resource_group_name=self.resource_group,
                 integration_account_name=integration_account_name,
-                integration_account=integration_account
+                integration_account=integration_account,
             )
             
             return result is not None
         except Exception as e:
-            print(f"Error creating integration account {integration_account_name}: {e}")
+            logging.exception("Error creating integration account %s: %s", integration_account_name, e)
             return False
     
     async def delete_integration_account(self, integration_account_name: str) -> bool:
@@ -731,13 +767,14 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return False
         
         try:
-            self.client.integration_accounts.delete(
+            await self._call_sync(
+                self.client.integration_accounts.delete,
                 resource_group_name=self.resource_group,
-                integration_account_name=integration_account_name
+                integration_account_name=integration_account_name,
             )
             return True
         except Exception as e:
-            print(f"Error deleting integration account {integration_account_name}: {e}")
+            logging.exception("Error deleting integration account %s: %s", integration_account_name, e)
             return False
     
     async def list_integration_account_maps(self, integration_account_name: str, top: int = 30) -> List[Dict[str, Any]]:
@@ -746,15 +783,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            maps = self.client.maps.list(
+            maps = await self._list_sync(
+                self.client.integration_account_maps.list,
                 resource_group_name=self.resource_group,
                 integration_account_name=integration_account_name,
-                top=top
+                top=top,
             )
             
             return [self._serialize_integration_account_map(map_item) for map_item in maps]
         except Exception as e:
-            print(f"Error listing maps for {integration_account_name}: {e}")
+            logging.exception("Error listing maps for %s: %s", integration_account_name, e)
             return []
     
     async def list_integration_account_schemas(self, integration_account_name: str, top: int = 30) -> List[Dict[str, Any]]:
@@ -763,15 +801,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            schemas = self.client.schemas.list(
+            schemas = await self._list_sync(
+                self.client.integration_account_schemas.list,
                 resource_group_name=self.resource_group,
                 integration_account_name=integration_account_name,
-                top=top
+                top=top,
             )
             
             return [self._serialize_integration_account_schema(schema) for schema in schemas]
         except Exception as e:
-            print(f"Error listing schemas for {integration_account_name}: {e}")
+            logging.exception("Error listing schemas for %s: %s", integration_account_name, e)
             return []
     
     async def list_integration_account_partners(self, integration_account_name: str, top: int = 30) -> List[Dict[str, Any]]:
@@ -780,15 +819,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            partners = self.client.partners.list(
+            partners = await self._list_sync(
+                self.client.integration_account_partners.list,
                 resource_group_name=self.resource_group,
                 integration_account_name=integration_account_name,
-                top=top
+                top=top,
             )
             
             return [self._serialize_integration_account_partner(partner) for partner in partners]
         except Exception as e:
-            print(f"Error listing partners for {integration_account_name}: {e}")
+            logging.exception("Error listing partners for %s: %s", integration_account_name, e)
             return []
     
     async def list_integration_account_agreements(self, integration_account_name: str, top: int = 30) -> List[Dict[str, Any]]:
@@ -797,15 +837,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
             return []
         
         try:
-            agreements = self.client.agreements.list(
+            agreements = await self._list_sync(
+                self.client.integration_account_agreements.list,
                 resource_group_name=self.resource_group,
                 integration_account_name=integration_account_name,
-                top=top
+                top=top,
             )
             
             return [self._serialize_integration_account_agreement(agreement) for agreement in agreements]
         except Exception as e:
-            print(f"Error listing agreements for {integration_account_name}: {e}")
+            logging.exception("Error listing agreements for %s: %s", integration_account_name, e)
             return []
     
     async def get_integration_account_callback_url(self, integration_account_name: str, key_type: str = "Primary") -> Dict[str, Any]:
@@ -825,14 +866,16 @@ class ConsumptionLogicAppClient(BaseLogicAppClient):
                 not_after=not_after
             )
             
-            callback_url = self.client.integration_accounts.get_callback_url(
+            callback_url = await self._call_sync(
+                self.client.integration_accounts.get_callback_url,
                 resource_group_name=self.resource_group,
                 integration_account_name=integration_account_name,
-                get_callback_url_parameters=callback_params
+                get_callback_url_parameters=callback_params,
             )
             
             return {"callback_url": callback_url.value}
         except Exception as e:
+            logging.exception("Error getting integration account callback URL for %s: %s", integration_account_name, e)
             return {"error": str(e)}
     
     # Additional serialization helpers for Integration Account objects

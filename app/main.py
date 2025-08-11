@@ -53,10 +53,16 @@ async def list_all_logic_apps():
     try:
         consumption_apps = await consumption_client.list_logic_apps()
         standard_apps = await standard_client.list_logic_apps()
+        # De-duplicate by resource id
+        by_id: Dict[str, Dict[str, Any]] = {}
+        for app in consumption_apps + standard_apps:
+            app_id = app.get("id") or app.get("name")
+            if app_id and app_id not in by_id:
+                by_id[app_id] = app
         return {
             "consumption_logic_apps": consumption_apps,
             "standard_logic_apps": standard_apps,
-            "total_count": len(consumption_apps) + len(standard_apps)
+            "total_count": len(by_id)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

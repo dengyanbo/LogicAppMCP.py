@@ -5,11 +5,11 @@ Contains shared functionality for both Consumption and Standard Logic Apps.
 """
 
 import asyncio
+import logging
 from typing import List, Dict, Any, Optional
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
 from azure.mgmt.logic import LogicManagementClient
-from azure.mgmt.logic.models import Workflow, WorkflowTrigger
-import requests
+from azure.mgmt.logic.models import Workflow
 import json
 
 from ..config import settings
@@ -22,6 +22,7 @@ class BaseLogicAppClient:
         self.subscription_id = settings.AZURE_SUBSCRIPTION_ID
         self.resource_group = settings.AZURE_RESOURCE_GROUP
         self.client: Optional[LogicManagementClient] = None
+        self.credential: Optional[DefaultAzureCredential | ClientSecretCredential] = None
         self._initialize_client()
     
     def _initialize_client(self):
@@ -29,22 +30,30 @@ class BaseLogicAppClient:
         try:
             if settings.validate_azure_config():
                 # Use service principal authentication
-                credential = ClientSecretCredential(
+                self.credential = ClientSecretCredential(
                     tenant_id=settings.AZURE_TENANT_ID,
                     client_id=settings.AZURE_CLIENT_ID,
                     client_secret=settings.AZURE_CLIENT_SECRET
                 )
             else:
                 # Use default credentials (suitable for local development)
-                credential = DefaultAzureCredential()
+                self.credential = DefaultAzureCredential()
             
             if self.subscription_id:
                 self.client = LogicManagementClient(
-                    credential=credential,
+                    credential=self.credential,
                     subscription_id=self.subscription_id
                 )
         except Exception as e:
-            print(f"Failed to initialize Azure client: {e}")
+            logging.exception("Failed to initialize Azure client: %s", e)
+    
+    async def _call_sync(self, func, *args, **kwargs):
+        """Run a synchronous SDK call in a thread to avoid blocking the event loop."""
+        return await asyncio.to_thread(func, *args, **kwargs)
+
+    async def _list_sync(self, func, *args, **kwargs):
+        """Run a synchronous list call and materialize results as a list in a thread."""
+        return await asyncio.to_thread(lambda: list(func(*args, **kwargs)))
     
     async def list_logic_apps(self) -> List[Dict[str, Any]]:
         """List all Logic Apps (base implementation)"""
@@ -52,8 +61,9 @@ class BaseLogicAppClient:
             return []
         
         try:
-            workflows = self.client.workflows.list_by_resource_group(
-                resource_group_name=self.resource_group
+            workflows = await self._list_sync(
+                self.client.workflows.list_by_resource_group,
+                resource_group_name=self.resource_group,
             )
             
             logic_apps = []
@@ -65,7 +75,7 @@ class BaseLogicAppClient:
             
             return logic_apps
         except Exception as e:
-            print(f"Error listing Logic Apps: {e}")
+            logging.exception("Error listing Logic Apps: %s", e)
             return []
     
     async def get_logic_app(self, workflow_name: str) -> Optional[Dict[str, Any]]:
@@ -74,9 +84,10 @@ class BaseLogicAppClient:
             return None
         
         try:
-            workflow = self.client.workflows.get(
+            workflow = await self._call_sync(
+                self.client.workflows.get,
                 resource_group_name=self.resource_group,
-                workflow_name=workflow_name
+                workflow_name=workflow_name,
             )
             
             if not self._is_compatible_plan_type(workflow):
@@ -84,7 +95,7 @@ class BaseLogicAppClient:
             
             return self._format_workflow_data(workflow, include_details=True)
         except Exception as e:
-            print(f"Error getting Logic App {workflow_name}: {e}")
+            logging.exception("Error getting Logic App %s: %s", workflow_name, e)
             return None
     
     async def get_run_history(self, workflow_name: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -93,10 +104,11 @@ class BaseLogicAppClient:
             return []
         
         try:
-            runs = self.client.workflow_runs.list(
+            runs = await self._list_sync(
+                self.client.workflow_runs.list,
                 resource_group_name=self.resource_group,
                 workflow_name=workflow_name,
-                top=limit
+                top=limit,
             )
             
             run_history = []
@@ -112,7 +124,7 @@ class BaseLogicAppClient:
             
             return run_history
         except Exception as e:
-            print(f"Error getting run history for {workflow_name}: {e}")
+            logging.exception("Error getting run history for %s: %s", workflow_name, e)
             return []
     
     def _format_workflow_data(self, workflow, include_details: bool = False) -> Dict[str, Any]:
