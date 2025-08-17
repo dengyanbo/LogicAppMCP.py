@@ -12,13 +12,15 @@ from typing import List, Dict, Any
 from .config import settings
 from .consumption.mcp_handler import ConsumptionMCPHandler
 from .standard.mcp_handler import StandardMCPHandler
+from .kudu.mcp_handler import KuduMCPHandler
 from .consumption.client import ConsumptionLogicAppClient
 from .standard.client import StandardLogicAppClient
+from .kudu.client import KuduClient
 
 # Create FastAPI application
 app = FastAPI(
     title="Logic App MCP Server",
-    description="Model Context Protocol server for Azure Logic Apps management",
+    description="Model Context Protocol server for Azure Logic Apps management with Kudu services",
     version="0.1.0"
 )
 
@@ -34,8 +36,10 @@ app.add_middleware(
 # Initialize components
 consumption_mcp_handler = ConsumptionMCPHandler()
 standard_mcp_handler = StandardMCPHandler()
+kudu_mcp_handler = KuduMCPHandler()
 consumption_client = ConsumptionLogicAppClient()
 standard_client = StandardLogicAppClient()
+kudu_client = KuduClient()
 
 @app.get("/")
 async def root():
@@ -99,6 +103,15 @@ async def handle_standard_mcp_request(request: Dict[str, Any]):
     """Handle MCP requests for Standard Logic Apps"""
     try:
         response = await standard_mcp_handler.handle_request(request)
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/mcp/kudu/request")
+async def handle_kudu_mcp_request(request: Dict[str, Any]):
+    """Handle MCP requests for Kudu services"""
+    try:
+        response = await kudu_mcp_handler.handle_request(request)
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
