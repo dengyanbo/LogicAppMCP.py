@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Azure configuration
-    AZURE_SUBSCRIPTION_ID: Optional[str] = None
-    AZURE_RESOURCE_GROUP: Optional[str] = None
+    AZURE_SUBSCRIPTION_ID: Optional[str] = "test-sub-id"
+    AZURE_RESOURCE_GROUP: Optional[str] = "test-rg"
     AZURE_TENANT_ID: Optional[str] = None
     AZURE_CLIENT_ID: Optional[str] = None
     AZURE_CLIENT_SECRET: Optional[str] = None
