@@ -15,25 +15,3 @@ def event_loop() -> AsyncIterator[asyncio.AbstractEventLoop]:
     yield loop
     loop.close()
 
-import inspect
-
-# Basic asyncio test support without external plugin
-
-def pytest_pyfunc_call(pyfuncitem):
-    testfunction = pyfuncitem.obj
-    if inspect.iscoroutinefunction(testfunction):
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.run_until_complete(testfunction(**pyfuncitem.funcargs))
-        return True
-    marker = pyfuncitem.get_closest_marker("asyncio")
-    if marker:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.run_until_complete(pyfuncitem.obj(**pyfuncitem.funcargs))
-        return True
-    return None
