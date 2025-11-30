@@ -17,3 +17,6 @@ dependencies = [
     "pytest-asyncio",
     "httpx[http2]"
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
