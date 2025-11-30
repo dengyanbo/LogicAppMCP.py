@@ -498,7 +498,9 @@ AZURE_CLIENT_ID=your_client_id
 AZURE_CLIENT_SECRET=your_client_secret
 
 # Server configuration
-HOST=localhost
+# HOST should remain 0.0.0.0 for Azure App Service bindings
+HOST=0.0.0.0
+# Azure sets PORT/WEBSITES_PORT automatically; default to 8000 locally
 PORT=8000
 DEBUG=true
 
@@ -514,8 +516,8 @@ LOGIC_APP_LOCATION=East US
 # Development mode
 uv run python -m app.main
 
-# Or
-uv run uvicorn app.main:app --reload
+# Or mirror Azure entrypoint
+uv run uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --reload
 ```
 
 ### API Endpoints
