@@ -4,17 +4,21 @@ Configuration Management
 Manages Azure credentials, server settings, and other configuration information
 """
 
-import os
 from typing import Optional
+
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application Configuration"""
-    
+
     # Server configuration
-    HOST: str = "localhost"
-    PORT: int = 8000
+    HOST: str = "0.0.0.0"
+    PORT: int = Field(
+        default=8000,
+        validation_alias=AliasChoices("PORT", "WEBSITES_PORT"),
+    )
     DEBUG: bool = True
     
     # Azure configuration
