@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+httpx
+azure-identity
+azure-mgmt-logic
+azure-mgmt-web
+pydantic
+pydantic-settings
+pytest
+pytest-asyncio
+httpx[http2]
