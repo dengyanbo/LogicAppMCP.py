@@ -31,7 +31,12 @@ class KuduMCPHandler:
         """Build Azure context from request parameters with settings fallback."""
         base_context = AzureContext.from_settings()
         params = params or {}
-        azure_params = params.get("azure_context", {}) if isinstance(params.get("azure_context"), dict) else {}
+        # Accept both "azure_context" (new) and "azure" (docs-compatible) envelopes
+        azure_params = {}
+        if isinstance(params.get("azure_context"), dict):
+            azure_params = params.get("azure_context", {})
+        elif isinstance(params.get("azure"), dict):
+            azure_params = params.get("azure", {})
 
         return AzureContext(
             subscription_id=azure_params.get("subscription_id")
@@ -58,6 +63,7 @@ class KuduMCPHandler:
 
         cleaned = dict(params)
         cleaned.pop("azure_context", None)
+        cleaned.pop("azure", None)
         for key in ("subscription_id", "resource_group", "tenant_id", "client_id", "client_secret"):
             cleaned.pop(key, None)
         return cleaned
