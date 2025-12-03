@@ -15,20 +15,26 @@ import subprocess
 import asyncio
 import os
 
-from ..shared.base_client import BaseLogicAppClient
+from ..shared.base_client import AzureContext, BaseLogicAppClient
 from ..config import settings
 
 
 class StandardLogicAppClient(BaseLogicAppClient):
     """Azure Logic Apps Standard Client"""
-    
-    def __init__(self):
-        super().__init__()
+
+    def __init__(self, context: Optional[AzureContext] = None):
+        super().__init__(context)
         self.web_client: Optional[WebSiteManagementClient] = None
+        self._initialize_web_client()
+
+    def configure_context(self, context: AzureContext):
+        """(Re)configure both logic and web clients for a new context."""
+        super().configure_context(context)
         self._initialize_web_client()
     
     def _initialize_web_client(self):
         """Initialize Web client for App Service operations"""
+        self.web_client = None
         try:
             if self.credential and self.subscription_id:
                 self.web_client = WebSiteManagementClient(

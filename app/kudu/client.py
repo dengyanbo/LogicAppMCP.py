@@ -19,7 +19,7 @@ import httpx
 from azure.identity import DefaultAzureCredential
 
 from ..config import settings
-from ..shared.base_client import BaseLogicAppClient
+from ..shared.base_client import AzureContext, BaseLogicAppClient
 
 
 class KuduClient(BaseLogicAppClient):
@@ -30,12 +30,18 @@ class KuduClient(BaseLogicAppClient):
     including file system operations, deployment management, and debugging tools.
     """
 
-    def __init__(self):
+    def __init__(self, context: Optional[AzureContext] = None):
         """Initialize Kudu client with Azure credentials"""
-        super().__init__()
+        super().__init__(context)
         self.kudu_base_url: Optional[str] = None
         self.kudu_credentials: Optional[str] = None
         self._http_client: Optional[httpx.AsyncClient] = None
+
+    def configure_context(self, context: AzureContext):
+        """Reconfigure the client for a new Azure context."""
+        super().configure_context(context)
+        self.kudu_base_url = None
+        self.kudu_credentials = None
 
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client with proper authentication"""
@@ -51,10 +57,7 @@ class KuduClient(BaseLogicAppClient):
 
     async def _get_kudu_url(self, app_name: str) -> str:
         """Get Kudu SCM URL for Logic App Standard"""
-        if not self.kudu_base_url:
-            # Standard Logic Apps use App Service hosting with SCM endpoints
-            self.kudu_base_url = f"https://{app_name}.scm.azurewebsites.net"
-        return self.kudu_base_url
+        return f"https://{app_name}.scm.azurewebsites.net"
 
     async def _get_kudu_credentials(self, app_name: str) -> str:
         """Get Kudu authentication credentials (publishing profile)"""
@@ -62,12 +65,15 @@ class KuduClient(BaseLogicAppClient):
             # Get publishing profile for authentication
             from azure.mgmt.web import WebSiteManagementClient
             
-            credential = DefaultAzureCredential()
-            web_client = WebSiteManagementClient(credential, settings.AZURE_SUBSCRIPTION_ID)
+            credential = self.credential or DefaultAzureCredential()
+            web_client = WebSiteManagementClient(
+                credential,
+                self.subscription_id or settings.AZURE_SUBSCRIPTION_ID,
+            )
             
             # Get publishing profile
             profile = web_client.web_apps.list_publishing_profile_xml_with_secrets(
-                resource_group_name=settings.AZURE_RESOURCE_GROUP,
+                resource_group_name=self.resource_group or settings.AZURE_RESOURCE_GROUP,
                 name=app_name
             )
             

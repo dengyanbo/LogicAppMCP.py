@@ -8,6 +8,7 @@ import json
 from typing import Dict, Any, List, Optional
 from .client import StandardLogicAppClient
 from ..config import settings
+from ..shared import AzureContext
 
 
 class StandardMCPHandler:
@@ -27,6 +28,50 @@ class StandardMCPHandler:
         }
         self._tools_cache = None
         self._required_by_tool: Dict[str, List[str]] = {}
+
+    def _extract_azure_context(self, params: Dict[str, Any]) -> AzureContext:
+        """Build Azure context from request parameters with settings fallback."""
+        base_context = AzureContext.from_settings()
+        params = params or {}
+        azure_params = params.get("azure_context", {}) if isinstance(params.get("azure_context"), dict) else {}
+
+        return AzureContext(
+            subscription_id=azure_params.get("subscription_id")
+            or params.get("subscription_id")
+            or base_context.subscription_id,
+            resource_group=azure_params.get("resource_group")
+            or params.get("resource_group")
+            or base_context.resource_group,
+            tenant_id=azure_params.get("tenant_id")
+            or params.get("tenant_id")
+            or base_context.tenant_id,
+            client_id=azure_params.get("client_id")
+            or params.get("client_id")
+            or base_context.client_id,
+            client_secret=azure_params.get("client_secret")
+            or params.get("client_secret")
+            or base_context.client_secret,
+        )
+
+    def _strip_azure_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove Azure context keys before forwarding to client methods."""
+        if not isinstance(params, dict):
+            return {}
+
+        cleaned = dict(params)
+        cleaned.pop("azure_context", None)
+        for key in ("subscription_id", "resource_group", "tenant_id", "client_id", "client_secret"):
+            cleaned.pop(key, None)
+        return cleaned
+
+    def _get_client(self, params: Dict[str, Any]) -> StandardLogicAppClient:
+        """Get a client configured for the current request context."""
+        context = self._extract_azure_context(params)
+        if self.logicapp_client:
+            self.logicapp_client.configure_context(context)
+        else:
+            self.logicapp_client = StandardLogicAppClient(context)
+        return self.logicapp_client
     
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle MCP requests"""
@@ -603,7 +648,9 @@ class StandardMCPHandler:
     async def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle tool calls for Standard Logic Apps"""
         tool_name = params.get("name")
-        arguments = params.get("arguments", {})
+        arguments = params.get("arguments", {}) or {}
+        client = self._get_client(arguments)
+        arguments = self._strip_azure_context(arguments)
         
         # Pre-validate required arguments
         if not self._tools_cache:
@@ -613,7 +660,7 @@ class StandardMCPHandler:
             return {"error": {"code": -32602, "message": f"Missing required parameter(s) for {tool_name}: {', '.join(missing)}"}}
 
         if tool_name == "list_standard_logic_apps":
-            result = await self.logicapp_client.list_logic_apps()
+            result = await client.list_logic_apps()
             return {
                 "result": {
                     "content": [
@@ -627,7 +674,7 @@ class StandardMCPHandler:
         
         elif tool_name == "get_standard_logic_app":
             workflow_name = arguments.get("workflow_name")
-            result = await self.logicapp_client.get_logic_app(workflow_name)
+            result = await client.get_logic_app(workflow_name)
             return {
                 "result": {
                     "content": [
@@ -643,7 +690,7 @@ class StandardMCPHandler:
             workflow_name = arguments.get("workflow_name")
             definition = arguments.get("definition")
             kwargs = {k: v for k, v in arguments.items() if k not in ["workflow_name", "definition"]}
-            result = await self.logicapp_client.create_logic_app(workflow_name, definition, **kwargs)
+            result = await client.create_logic_app(workflow_name, definition, **kwargs)
             return {
                 "result": {
                     "content": [
@@ -659,7 +706,7 @@ class StandardMCPHandler:
             workflow_name = arguments.get("workflow_name")
             trigger_name = arguments.get("trigger_name", "manual")
             kwargs = {k: v for k, v in arguments.items() if k not in ["workflow_name", "trigger_name"]}
-            result = await self.logicapp_client.trigger_logic_app(workflow_name, trigger_name, **kwargs)
+            result = await client.trigger_logic_app(workflow_name, trigger_name, **kwargs)
             return {
                 "result": {
                     "content": [
@@ -674,7 +721,7 @@ class StandardMCPHandler:
         elif tool_name == "get_standard_run_history":
             workflow_name = arguments.get("workflow_name")
             limit = arguments.get("limit", 10)
-            result = await self.logicapp_client.get_run_history(workflow_name, limit)
+            result = await client.get_run_history(workflow_name, limit)
             return {
                 "result": {
                     "content": [
@@ -688,7 +735,7 @@ class StandardMCPHandler:
         
         elif tool_name == "get_app_service_info":
             app_name = arguments.get("app_name")
-            result = await self.logicapp_client.get_app_service_info(app_name)
+            result = await client.get_app_service_info(app_name)
             return {
                 "result": {
                     "content": [
@@ -704,7 +751,7 @@ class StandardMCPHandler:
             plan_name = arguments.get("plan_name")
             instance_count = arguments.get("instance_count")
             sku_name = arguments.get("sku_name")
-            result = await self.logicapp_client.scale_app_service_plan(plan_name, instance_count, sku_name)
+            result = await client.scale_app_service_plan(plan_name, instance_count, sku_name)
             return {
                 "result": {
                     "content": [
@@ -719,7 +766,7 @@ class StandardMCPHandler:
         elif tool_name == "configure_vnet_integration":
             app_name = arguments.get("app_name")
             vnet_config = arguments.get("vnet_config")
-            result = await self.logicapp_client.configure_vnet_integration(app_name, vnet_config)
+            result = await client.configure_vnet_integration(app_name, vnet_config)
             return {
                 "result": {
                     "content": [
@@ -734,7 +781,7 @@ class StandardMCPHandler:
         elif tool_name == "get_standard_metrics":
             app_name = arguments.get("app_name")
             workflow_name = arguments.get("workflow_name")
-            result = await self.logicapp_client.get_standard_metrics(app_name, workflow_name)
+            result = await client.get_standard_metrics(app_name, workflow_name)
             return {
                 "result": {
                     "content": [
@@ -750,7 +797,7 @@ class StandardMCPHandler:
         elif tool_name == "cli_create_standard_logic_app":
             name = arguments.get("name")
             kwargs = {k: v for k, v in arguments.items() if k != "name"}
-            result = await self.logicapp_client.cli_create_logic_app(name, **kwargs)
+            result = await client.cli_create_logic_app(name, **kwargs)
             return {
                 "result": {
                     "content": [
@@ -765,7 +812,7 @@ class StandardMCPHandler:
         elif tool_name == "cli_show_standard_logic_app":
             name = arguments.get("name")
             resource_group = arguments.get("resource_group")
-            result = await self.logicapp_client.cli_show_logic_app(name, resource_group)
+            result = await client.cli_show_logic_app(name, resource_group)
             return {
                 "result": {
                     "content": [
@@ -779,7 +826,7 @@ class StandardMCPHandler:
         
         elif tool_name == "cli_list_standard_logic_apps":
             resource_group = arguments.get("resource_group")
-            result = await self.logicapp_client.cli_list_logic_apps(resource_group)
+            result = await client.cli_list_logic_apps(resource_group)
             return {
                 "result": {
                     "content": [
@@ -795,7 +842,7 @@ class StandardMCPHandler:
             name = arguments.get("name")
             resource_group = arguments.get("resource_group")
             slot = arguments.get("slot")
-            result = await self.logicapp_client.cli_start_logic_app(name, resource_group, slot)
+            result = await client.cli_start_logic_app(name, resource_group, slot)
             return {
                 "result": {
                     "content": [
@@ -811,7 +858,7 @@ class StandardMCPHandler:
             name = arguments.get("name")
             resource_group = arguments.get("resource_group")
             slot = arguments.get("slot")
-            result = await self.logicapp_client.cli_stop_logic_app(name, resource_group, slot)
+            result = await client.cli_stop_logic_app(name, resource_group, slot)
             return {
                 "result": {
                     "content": [
@@ -827,7 +874,7 @@ class StandardMCPHandler:
             name = arguments.get("name")
             resource_group = arguments.get("resource_group")
             slot = arguments.get("slot")
-            result = await self.logicapp_client.cli_restart_logic_app(name, resource_group, slot)
+            result = await client.cli_restart_logic_app(name, resource_group, slot)
             return {
                 "result": {
                     "content": [
@@ -843,7 +890,7 @@ class StandardMCPHandler:
             name = arguments.get("name")
             instance_count = arguments.get("instance_count")
             resource_group = arguments.get("resource_group")
-            result = await self.logicapp_client.cli_scale_logic_app(name, instance_count, resource_group)
+            result = await client.cli_scale_logic_app(name, instance_count, resource_group)
             return {
                 "result": {
                     "content": [
@@ -858,7 +905,7 @@ class StandardMCPHandler:
         elif tool_name == "cli_update_standard_logic_app":
             name = arguments.get("name")
             kwargs = {k: v for k, v in arguments.items() if k != "name"}
-            result = await self.logicapp_client.cli_update_logic_app(name, **kwargs)
+            result = await client.cli_update_logic_app(name, **kwargs)
             return {
                 "result": {
                     "content": [
@@ -874,7 +921,7 @@ class StandardMCPHandler:
             name = arguments.get("name")
             resource_group = arguments.get("resource_group")
             slot = arguments.get("slot")
-            result = await self.logicapp_client.cli_delete_logic_app(name, resource_group, slot)
+            result = await client.cli_delete_logic_app(name, resource_group, slot)
             return {
                 "result": {
                     "content": [
@@ -890,7 +937,7 @@ class StandardMCPHandler:
             name = arguments.get("name")
             resource_group = arguments.get("resource_group")
             slot = arguments.get("slot")
-            result = await self.logicapp_client.cli_config_appsettings_list(name, resource_group, slot)
+            result = await client.cli_config_appsettings_list(name, resource_group, slot)
             return {
                 "result": {
                     "content": [
@@ -907,7 +954,7 @@ class StandardMCPHandler:
             settings = arguments.get("settings")
             resource_group = arguments.get("resource_group")
             slot = arguments.get("slot")
-            result = await self.logicapp_client.cli_config_appsettings_set(name, settings, resource_group, slot)
+            result = await client.cli_config_appsettings_set(name, settings, resource_group, slot)
             return {
                 "result": {
                     "content": [
@@ -924,7 +971,7 @@ class StandardMCPHandler:
             setting_names = arguments.get("setting_names")
             resource_group = arguments.get("resource_group")
             slot = arguments.get("slot")
-            result = await self.logicapp_client.cli_config_appsettings_delete(name, setting_names, resource_group, slot)
+            result = await client.cli_config_appsettings_delete(name, setting_names, resource_group, slot)
             return {
                 "result": {
                     "content": [
@@ -959,10 +1006,12 @@ class StandardMCPHandler:
     
     async def _handle_resources_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Read resource content for Standard Logic Apps"""
+        client = self._get_client(params)
+        params = self._strip_azure_context(params)
         uri = params.get("uri")
-        
+
         if uri == "logicapp://standard/workflows":
-            workflows = await self.logicapp_client.list_logic_apps()
+            workflows = await client.list_logic_apps()
             return {
                 "result": {
                     "contents": [
