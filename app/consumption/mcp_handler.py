@@ -8,6 +8,7 @@ import json
 from typing import Dict, Any, List, Optional
 from .client import ConsumptionLogicAppClient
 from ..config import settings
+from ..shared import AzureContext
 
 
 class ConsumptionMCPHandler:
@@ -27,6 +28,50 @@ class ConsumptionMCPHandler:
         }
         self._tools_cache = None
         self._required_by_tool: Dict[str, List[str]] = {}
+
+    def _extract_azure_context(self, params: Dict[str, Any]) -> AzureContext:
+        """Build Azure context from request parameters with settings fallback."""
+        base_context = AzureContext.from_settings()
+        params = params or {}
+        azure_params = params.get("azure_context", {}) if isinstance(params.get("azure_context"), dict) else {}
+
+        return AzureContext(
+            subscription_id=azure_params.get("subscription_id")
+            or params.get("subscription_id")
+            or base_context.subscription_id,
+            resource_group=azure_params.get("resource_group")
+            or params.get("resource_group")
+            or base_context.resource_group,
+            tenant_id=azure_params.get("tenant_id")
+            or params.get("tenant_id")
+            or base_context.tenant_id,
+            client_id=azure_params.get("client_id")
+            or params.get("client_id")
+            or base_context.client_id,
+            client_secret=azure_params.get("client_secret")
+            or params.get("client_secret")
+            or base_context.client_secret,
+        )
+
+    def _strip_azure_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove Azure context keys before forwarding to client methods."""
+        if not isinstance(params, dict):
+            return {}
+
+        cleaned = dict(params)
+        cleaned.pop("azure_context", None)
+        for key in ("subscription_id", "resource_group", "tenant_id", "client_id", "client_secret"):
+            cleaned.pop(key, None)
+        return cleaned
+
+    def _get_client(self, params: Dict[str, Any]) -> ConsumptionLogicAppClient:
+        """Get a client configured for the current request context."""
+        context = self._extract_azure_context(params)
+        if self.logicapp_client:
+            self.logicapp_client.configure_context(context)
+        else:
+            self.logicapp_client = ConsumptionLogicAppClient(context)
+        return self.logicapp_client
     
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle MCP requests"""
@@ -840,7 +885,9 @@ class ConsumptionMCPHandler:
     async def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle tool calls for Consumption Logic Apps"""
         tool_name = params.get("name")
-        arguments = params.get("arguments", {})
+        arguments = params.get("arguments", {}) or {}
+        client = self._get_client(arguments)
+        arguments = self._strip_azure_context(arguments)
         
         try:
             # Ensure we have tool definitions loaded for validation
@@ -857,54 +904,54 @@ class ConsumptionMCPHandler:
                 }
             # Workflow Management APIs
             if tool_name == "list_consumption_logic_apps":
-                result = await self.logicapp_client.list_logic_apps()
+                result = await client.list_logic_apps()
                 return self._format_json_response(result)
             
             elif tool_name == "get_consumption_logic_app":
                 workflow_name = arguments.get("workflow_name")
-                result = await self.logicapp_client.get_logic_app(workflow_name)
+                result = await client.get_logic_app(workflow_name)
                 return self._format_json_response(result)
             
             elif tool_name == "create_consumption_logic_app":
                 workflow_name = arguments.get("workflow_name")
                 definition = arguments.get("definition")
                 kwargs = {k: v for k, v in arguments.items() if k not in ["workflow_name", "definition"]}
-                result = await self.logicapp_client.create_logic_app(workflow_name, definition, **kwargs)
+                result = await client.create_logic_app(workflow_name, definition, **kwargs)
                 return self._format_text_response(f"Consumption Logic App '{workflow_name}' created: {result}")
             
             elif tool_name == "update_consumption_logic_app":
                 workflow_name = arguments.get("workflow_name")
-                result = await self.logicapp_client.update_logic_app(workflow_name, **arguments)
+                result = await client.update_logic_app(workflow_name, **arguments)
                 return self._format_text_response(f"Consumption Logic App '{workflow_name}' updated: {result}")
             
             elif tool_name == "delete_consumption_logic_app":
                 workflow_name = arguments.get("workflow_name")
-                result = await self.logicapp_client.delete_logic_app(workflow_name)
+                result = await client.delete_logic_app(workflow_name)
                 return self._format_text_response(f"Consumption Logic App '{workflow_name}' deleted: {result}")
             
             elif tool_name == "enable_consumption_logic_app":
                 workflow_name = arguments.get("workflow_name")
-                result = await self.logicapp_client.enable_logic_app(workflow_name)
+                result = await client.enable_logic_app(workflow_name)
                 return self._format_text_response(f"Consumption Logic App '{workflow_name}' enabled: {result}")
             
             elif tool_name == "disable_consumption_logic_app":
                 workflow_name = arguments.get("workflow_name")
-                result = await self.logicapp_client.disable_logic_app(workflow_name)
+                result = await client.disable_logic_app(workflow_name)
                 return self._format_text_response(f"Consumption Logic App '{workflow_name}' disabled: {result}")
             
             elif tool_name == "validate_consumption_logic_app":
-                result = await self.logicapp_client.validate_logic_app(**arguments)
+                result = await client.validate_logic_app(**arguments)
                 return self._format_json_response(result)
             
             elif tool_name == "get_logic_app_callback_url":
                 workflow_name = arguments.get("workflow_name")
                 trigger_name = arguments.get("trigger_name", "manual")
-                result = await self.logicapp_client.get_callback_url(workflow_name, trigger_name)
+                result = await client.get_callback_url(workflow_name, trigger_name)
                 return self._format_json_response(result)
             
             elif tool_name == "get_logic_app_swagger":
                 workflow_name = arguments.get("workflow_name")
-                result = await self.logicapp_client.get_swagger_definition(workflow_name)
+                result = await client.get_swagger_definition(workflow_name)
                 return self._format_json_response(result)
             
             # Workflow Runs Management
@@ -912,55 +959,55 @@ class ConsumptionMCPHandler:
                 workflow_name = arguments.get("workflow_name")
                 top = arguments.get("top", 30)
                 filter_expr = arguments.get("filter")
-                result = await self.logicapp_client.list_workflow_runs(workflow_name, top, filter_expr)
+                result = await client.list_workflow_runs(workflow_name, top, filter_expr)
                 return self._format_json_response(result)
             
             elif tool_name == "get_consumption_workflow_run":
                 workflow_name = arguments.get("workflow_name")
                 run_name = arguments.get("run_name")
-                result = await self.logicapp_client.get_workflow_run(workflow_name, run_name)
+                result = await client.get_workflow_run(workflow_name, run_name)
                 return self._format_json_response(result)
             
             elif tool_name == "cancel_consumption_workflow_run":
                 workflow_name = arguments.get("workflow_name")
                 run_name = arguments.get("run_name")
-                result = await self.logicapp_client.cancel_workflow_run(workflow_name, run_name)
+                result = await client.cancel_workflow_run(workflow_name, run_name)
                 return self._format_text_response(f"Workflow run '{run_name}' cancelled: {result}")
             
             elif tool_name == "resubmit_consumption_workflow_run":
                 workflow_name = arguments.get("workflow_name")
                 run_name = arguments.get("run_name")
-                result = await self.logicapp_client.resubmit_workflow_run(workflow_name, run_name)
+                result = await client.resubmit_workflow_run(workflow_name, run_name)
                 return self._format_text_response(f"Workflow run '{run_name}' resubmitted: {result}")
             
             # Workflow Triggers Management
             elif tool_name == "list_consumption_workflow_triggers":
                 workflow_name = arguments.get("workflow_name")
-                result = await self.logicapp_client.list_workflow_triggers(workflow_name)
+                result = await client.list_workflow_triggers(workflow_name)
                 return self._format_json_response(result)
             
             elif tool_name == "get_consumption_workflow_trigger":
                 workflow_name = arguments.get("workflow_name")
                 trigger_name = arguments.get("trigger_name")
-                result = await self.logicapp_client.get_workflow_trigger(workflow_name, trigger_name)
+                result = await client.get_workflow_trigger(workflow_name, trigger_name)
                 return self._format_json_response(result)
             
             elif tool_name == "run_consumption_workflow_trigger":
                 workflow_name = arguments.get("workflow_name")
                 trigger_name = arguments.get("trigger_name")
-                result = await self.logicapp_client.run_workflow_trigger(workflow_name, trigger_name)
+                result = await client.run_workflow_trigger(workflow_name, trigger_name)
                 return self._format_text_response(f"Trigger '{trigger_name}' executed: {result}")
             
             elif tool_name == "reset_consumption_workflow_trigger":
                 workflow_name = arguments.get("workflow_name")
                 trigger_name = arguments.get("trigger_name")
-                result = await self.logicapp_client.reset_workflow_trigger(workflow_name, trigger_name)
+                result = await client.reset_workflow_trigger(workflow_name, trigger_name)
                 return self._format_text_response(f"Trigger '{trigger_name}' reset: {result}")
             
             elif tool_name == "get_trigger_schema":
                 workflow_name = arguments.get("workflow_name")
                 trigger_name = arguments.get("trigger_name")
-                result = await self.logicapp_client.get_trigger_schema(workflow_name, trigger_name)
+                result = await client.get_trigger_schema(workflow_name, trigger_name)
                 return self._format_json_response(result)
             
             # Workflow Trigger Histories
@@ -968,14 +1015,14 @@ class ConsumptionMCPHandler:
                 workflow_name = arguments.get("workflow_name")
                 trigger_name = arguments.get("trigger_name")
                 top = arguments.get("top", 30)
-                result = await self.logicapp_client.list_trigger_histories(workflow_name, trigger_name, top)
+                result = await client.list_trigger_histories(workflow_name, trigger_name, top)
                 return self._format_json_response(result)
             
             elif tool_name == "get_trigger_history":
                 workflow_name = arguments.get("workflow_name")
                 trigger_name = arguments.get("trigger_name")
                 history_name = arguments.get("history_name")
-                result = await self.logicapp_client.get_trigger_history(workflow_name, trigger_name, history_name)
+                result = await client.get_trigger_history(workflow_name, trigger_name, history_name)
                 return self._format_json_response(result)
             
             # Workflow Run Actions
@@ -983,80 +1030,80 @@ class ConsumptionMCPHandler:
                 workflow_name = arguments.get("workflow_name")
                 run_name = arguments.get("run_name")
                 top = arguments.get("top", 30)
-                result = await self.logicapp_client.list_workflow_run_actions(workflow_name, run_name, top)
+                result = await client.list_workflow_run_actions(workflow_name, run_name, top)
                 return self._format_json_response(result)
             
             elif tool_name == "get_workflow_run_action":
                 workflow_name = arguments.get("workflow_name")
                 run_name = arguments.get("run_name")
                 action_name = arguments.get("action_name")
-                result = await self.logicapp_client.get_workflow_run_action(workflow_name, run_name, action_name)
+                result = await client.get_workflow_run_action(workflow_name, run_name, action_name)
                 return self._format_json_response(result)
             
             # Workflow Versions
             elif tool_name == "list_workflow_versions":
                 workflow_name = arguments.get("workflow_name")
                 top = arguments.get("top", 30)
-                result = await self.logicapp_client.list_workflow_versions(workflow_name, top)
+                result = await client.list_workflow_versions(workflow_name, top)
                 return self._format_json_response(result)
             
             elif tool_name == "get_workflow_version":
                 workflow_name = arguments.get("workflow_name")
                 version_id = arguments.get("version_id")
-                result = await self.logicapp_client.get_workflow_version(workflow_name, version_id)
+                result = await client.get_workflow_version(workflow_name, version_id)
                 return self._format_json_response(result)
             
             # Integration Account Management
             elif tool_name == "list_integration_accounts":
                 top = arguments.get("top", 30)
-                result = await self.logicapp_client.list_integration_accounts(top)
+                result = await client.list_integration_accounts(top)
                 return self._format_json_response(result)
             
             elif tool_name == "get_integration_account":
                 integration_account_name = arguments.get("integration_account_name")
-                result = await self.logicapp_client.get_integration_account(integration_account_name)
+                result = await client.get_integration_account(integration_account_name)
                 return self._format_json_response(result)
             
             elif tool_name == "create_integration_account":
                 integration_account_name = arguments.get("integration_account_name")
                 sku = arguments.get("sku", "Free")
                 location = arguments.get("location")
-                result = await self.logicapp_client.create_integration_account(integration_account_name, sku, location)
+                result = await client.create_integration_account(integration_account_name, sku, location)
                 return self._format_text_response(f"Integration account '{integration_account_name}' created: {result}")
             
             elif tool_name == "delete_integration_account":
                 integration_account_name = arguments.get("integration_account_name")
-                result = await self.logicapp_client.delete_integration_account(integration_account_name)
+                result = await client.delete_integration_account(integration_account_name)
                 return self._format_text_response(f"Integration account '{integration_account_name}' deleted: {result}")
             
             elif tool_name == "list_integration_account_maps":
                 integration_account_name = arguments.get("integration_account_name")
                 top = arguments.get("top", 30)
-                result = await self.logicapp_client.list_integration_account_maps(integration_account_name, top)
+                result = await client.list_integration_account_maps(integration_account_name, top)
                 return self._format_json_response(result)
             
             elif tool_name == "list_integration_account_schemas":
                 integration_account_name = arguments.get("integration_account_name")
                 top = arguments.get("top", 30)
-                result = await self.logicapp_client.list_integration_account_schemas(integration_account_name, top)
+                result = await client.list_integration_account_schemas(integration_account_name, top)
                 return self._format_json_response(result)
             
             elif tool_name == "list_integration_account_partners":
                 integration_account_name = arguments.get("integration_account_name")
                 top = arguments.get("top", 30)
-                result = await self.logicapp_client.list_integration_account_partners(integration_account_name, top)
+                result = await client.list_integration_account_partners(integration_account_name, top)
                 return self._format_json_response(result)
             
             elif tool_name == "list_integration_account_agreements":
                 integration_account_name = arguments.get("integration_account_name")
                 top = arguments.get("top", 30)
-                result = await self.logicapp_client.list_integration_account_agreements(integration_account_name, top)
+                result = await client.list_integration_account_agreements(integration_account_name, top)
                 return self._format_json_response(result)
             
             elif tool_name == "get_integration_account_callback_url":
                 integration_account_name = arguments.get("integration_account_name")
                 key_type = arguments.get("key_type", "Primary")
-                result = await self.logicapp_client.get_integration_account_callback_url(integration_account_name, key_type)
+                result = await client.get_integration_account_callback_url(integration_account_name, key_type)
                 return self._format_json_response(result)
             
             # Legacy/Compatibility APIs
@@ -1064,25 +1111,25 @@ class ConsumptionMCPHandler:
                 workflow_name = arguments.get("workflow_name")
                 trigger_name = arguments.get("trigger_name", "manual")
                 kwargs = {k: v for k, v in arguments.items() if k not in ["workflow_name", "trigger_name"]}
-                result = await self.logicapp_client.trigger_logic_app(workflow_name, trigger_name, **kwargs)
+                result = await client.trigger_logic_app(workflow_name, trigger_name, **kwargs)
                 return self._format_json_response(result)
             
             elif tool_name == "get_consumption_run_history":
                 workflow_name = arguments.get("workflow_name")
                 limit = arguments.get("limit", 10)
-                result = await self.logicapp_client.get_run_history(workflow_name, limit)
+                result = await client.get_run_history(workflow_name, limit)
                 return self._format_json_response(result)
             
             elif tool_name == "get_consumption_metrics":
                 workflow_name = arguments.get("workflow_name")
                 days = arguments.get("days", 7)
-                result = await self.logicapp_client.get_consumption_metrics(workflow_name, days)
+                result = await client.get_consumption_metrics(workflow_name, days)
                 return self._format_json_response(result)
             
             elif tool_name == "configure_http_trigger":
                 workflow_name = arguments.get("workflow_name")
                 trigger_config = arguments.get("trigger_config")
-                result = await self.logicapp_client.configure_http_trigger(workflow_name, trigger_config)
+                result = await client.configure_http_trigger(workflow_name, trigger_config)
                 return self._format_text_response(f"HTTP trigger configured for '{workflow_name}': {result}")
             
             else:
@@ -1142,10 +1189,12 @@ class ConsumptionMCPHandler:
     
     async def _handle_resources_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Read resource content for Consumption Logic Apps"""
+        client = self._get_client(params)
+        params = self._strip_azure_context(params)
         uri = params.get("uri")
-        
+
         if uri == "logicapp://consumption/workflows":
-            workflows = await self.logicapp_client.list_logic_apps()
+            workflows = await client.list_logic_apps()
             return {
                 "result": {
                     "contents": [
