@@ -15,7 +15,8 @@ dependencies = [
     "pydantic-settings",
     "pytest",
     "pytest-asyncio",
-    "httpx[http2]"
+    "httpx[http2]",
+    "six"
 ]
 
 [tool.pytest.ini_options]

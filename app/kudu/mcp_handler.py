@@ -23,9 +23,9 @@ class KuduMCPHandler:
     management through Azure Kudu REST API operations.
     """
 
-    def __init__(self):
+    def __init__(self, azure_context: Optional[Dict[str, Any]] = None):
         """Initialize Kudu MCP handler"""
-        self.client = KuduClient()
+        self.client = KuduClient(azure_context=azure_context)
 
     def _extract_azure_context(self, params: Dict[str, Any]) -> AzureContext:
         """Build Azure context from request parameters with settings fallback."""
@@ -76,11 +76,12 @@ class KuduMCPHandler:
         try:
             method = request.get("method")
             params = request.get("params", {})
+            azure_context = request.get("azure_context") or params.get("azure_context")
 
             if method == "tools/list":
                 return await self._handle_tools_list()
             elif method == "tools/call":
-                return await self._handle_tools_call(params)
+                return await self._handle_tools_call(params, azure_context)
             elif method == "resources/list":
                 return await self._handle_resources_list()
             elif method == "resources/read":
@@ -509,9 +510,24 @@ class KuduMCPHandler:
             }
         ]
 
+        azure_context_schema = {
+            "type": "object",
+            "description": "Azure context including subscription, resource group, and optional service principal credentials",
+            "properties": {
+                "subscription_id": {"type": "string"},
+                "resource_group": {"type": "string"},
+                "tenant_id": {"type": "string"},
+                "client_id": {"type": "string"},
+                "client_secret": {"type": "string"},
+            },
+        }
+
+        for tool in tools:
+            tool["inputSchema"]["properties"]["azure_context"] = azure_context_schema
+
         return {"result": {"tools": tools}}
 
-    async def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_tools_call(self, params: Dict[str, Any], azure_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle tool call request"""
         tool_name = params.get("name")
         arguments = params.get("arguments", {}) or {}
@@ -537,7 +553,8 @@ class KuduMCPHandler:
                 result = await client.execute_command(
                     arguments["app_name"],
                     arguments["command"],
-                    arguments.get("directory", "site\\wwwroot")
+                    arguments.get("directory", "site\\wwwroot"),
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
@@ -603,7 +620,8 @@ class KuduMCPHandler:
                     arguments["app_name"],
                     arguments.get("deployment_id"),
                     arguments.get("clean", False),
-                    arguments.get("need_file_update", True)
+                    arguments.get("need_file_update", True),
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
@@ -619,7 +637,8 @@ class KuduMCPHandler:
                 result = await client.get_deployment_log_details(
                     arguments["app_name"],
                     arguments["deployment_id"],
-                    arguments["log_id"]
+                    arguments["log_id"],
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
@@ -628,7 +647,8 @@ class KuduMCPHandler:
                 result = await client.zip_deploy_from_url(
                     arguments["app_name"],
                     arguments["package_uri"],
-                    arguments.get("is_async", True)
+                    arguments.get("is_async", True),
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
@@ -641,7 +661,8 @@ class KuduMCPHandler:
             elif tool_name == "get_ssh_key":
                 result = await client.get_ssh_key(
                     arguments["app_name"],
-                    arguments.get("ensure_public_key", True)
+                    arguments.get("ensure_public_key", True),
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
@@ -681,7 +702,8 @@ class KuduMCPHandler:
                 dump_content = await client.create_process_dump(
                     arguments["app_name"],
                     arguments["process_id"],
-                    arguments.get("dump_type", "mini")
+                    arguments.get("dump_type", "mini"),
+                    azure_context=merged_context,
                 )
                 b64_content = base64.b64encode(dump_content).decode('ascii')
                 return {"result": {"content": [{"type": "text", "text": f"Process dump (base64): {b64_content}"}]}}
