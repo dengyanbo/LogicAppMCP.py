@@ -68,7 +68,7 @@ class KuduMCPHandler:
         if self.client:
             self.client.configure_context(context)
         else:
-            self.client = KuduClient(context)
+            self.client = KuduClient(context=context)
         return self.client
 
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -533,6 +533,7 @@ class KuduMCPHandler:
         arguments = params.get("arguments", {}) or {}
         client = self._get_client(arguments)
         arguments = self._strip_azure_context(arguments)
+        merged_context = client._resolve_azure_context()
 
         try:
             # SCM Operations
