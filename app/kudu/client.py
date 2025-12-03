@@ -7,7 +7,6 @@ management, debugging, and file operations.
 Based on: https://github.com/projectkudu/kudu/wiki/rest-api
 """
 
-import asyncio
 import json
 import os
 import zipfile
@@ -16,7 +15,7 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urljoin
 
 import httpx
-from azure.identity import DefaultAzureCredential
+from azure.identity import ClientSecretCredential, DefaultAzureCredential
 
 from ..config import settings
 from ..shared.base_client import BaseLogicAppClient
@@ -30,12 +29,30 @@ class KuduClient(BaseLogicAppClient):
     including file system operations, deployment management, and debugging tools.
     """
 
-    def __init__(self):
+    def __init__(self, azure_context: Optional[Dict[str, Optional[str]]] = None):
         """Initialize Kudu client with Azure credentials"""
         super().__init__()
         self.kudu_base_url: Optional[str] = None
         self.kudu_credentials: Optional[str] = None
         self._http_client: Optional[httpx.AsyncClient] = None
+        self.azure_context: Dict[str, Optional[str]] = azure_context or {}
+
+    def _resolve_azure_context(self, azure_context: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Optional[str]]:
+        """Merge provided Azure context with stored values and settings fallback."""
+        merged_context: Dict[str, Optional[str]] = {}
+        merged_context.update({
+            "subscription_id": settings.AZURE_SUBSCRIPTION_ID,
+            "resource_group": settings.AZURE_RESOURCE_GROUP,
+            "tenant_id": settings.AZURE_TENANT_ID,
+            "client_id": settings.AZURE_CLIENT_ID,
+            "client_secret": settings.AZURE_CLIENT_SECRET,
+        })
+
+        merged_context.update(self.azure_context)
+        if azure_context:
+            merged_context.update(azure_context)
+
+        return merged_context
 
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client with proper authentication"""
@@ -56,18 +73,32 @@ class KuduClient(BaseLogicAppClient):
             self.kudu_base_url = f"https://{app_name}.scm.azurewebsites.net"
         return self.kudu_base_url
 
-    async def _get_kudu_credentials(self, app_name: str) -> str:
+    async def _get_kudu_credentials(
+        self,
+        app_name: str,
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> str:
         """Get Kudu authentication credentials (publishing profile)"""
         try:
             # Get publishing profile for authentication
             from azure.mgmt.web import WebSiteManagementClient
-            
-            credential = DefaultAzureCredential()
-            web_client = WebSiteManagementClient(credential, settings.AZURE_SUBSCRIPTION_ID)
-            
+
+            context = self._resolve_azure_context(azure_context)
+
+            if context.get("tenant_id") and context.get("client_id") and context.get("client_secret"):
+                credential = ClientSecretCredential(
+                    tenant_id=context.get("tenant_id"),
+                    client_id=context.get("client_id"),
+                    client_secret=context.get("client_secret"),
+                )
+            else:
+                credential = DefaultAzureCredential()
+
+            web_client = WebSiteManagementClient(credential, context.get("subscription_id"))
+
             # Get publishing profile
             profile = web_client.web_apps.list_publishing_profile_xml_with_secrets(
-                resource_group_name=settings.AZURE_RESOURCE_GROUP,
+                resource_group_name=context.get("resource_group"),
                 name=app_name
             )
             
@@ -98,12 +129,13 @@ class KuduClient(BaseLogicAppClient):
         endpoint: str,
         data: Optional[Union[Dict, bytes]] = None,
         headers: Optional[Dict[str, str]] = None,
-        params: Optional[Dict[str, str]] = None
+        params: Optional[Dict[str, str]] = None,
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
     ) -> httpx.Response:
         """Make authenticated request to Kudu API"""
         try:
             kudu_url = await self._get_kudu_url(app_name)
-            credentials = await self._get_kudu_credentials(app_name)
+            credentials = await self._get_kudu_credentials(app_name, azure_context)
             
             client = await self._get_http_client()
             url = urljoin(kudu_url, endpoint)
@@ -131,51 +163,63 @@ class KuduClient(BaseLogicAppClient):
             raise Exception(f"Kudu API request failed: {str(e)}")
 
     # SCM Information Operations
-    async def get_scm_info(self, app_name: str) -> Dict[str, Any]:
+    async def get_scm_info(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Any]:
         """Get SCM repository information"""
-        response = await self._kudu_request(app_name, "GET", "/api/scm/info")
+        response = await self._kudu_request(app_name, "GET", "/api/scm/info", azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def clean_repository(self, app_name: str) -> str:
+    async def clean_repository(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Clean repository using 'git clean -xdff'"""
-        response = await self._kudu_request(app_name, "POST", "/api/scm/clean")
+        response = await self._kudu_request(app_name, "POST", "/api/scm/clean", azure_context=azure_context)
         response.raise_for_status()
         return "Repository cleaned successfully"
 
-    async def delete_repository(self, app_name: str) -> str:
+    async def delete_repository(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Delete the repository"""
-        response = await self._kudu_request(app_name, "DELETE", "/api/scm")
+        response = await self._kudu_request(app_name, "DELETE", "/api/scm", azure_context=azure_context)
         response.raise_for_status()
         return "Repository deleted successfully"
 
     # Command Execution
-    async def execute_command(self, app_name: str, command: str, directory: str = "site\\wwwroot") -> Dict[str, Any]:
+    async def execute_command(
+        self,
+        app_name: str,
+        command: str,
+        directory: str = "site\\wwwroot",
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> Dict[str, Any]:
         """Execute arbitrary command and return output"""
         data = {
             "command": command,
             "dir": directory
         }
-        response = await self._kudu_request(app_name, "POST", "/api/command", data=data)
+        response = await self._kudu_request(app_name, "POST", "/api/command", data=data, azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
     # VFS (Virtual File System) Operations
-    async def get_file(self, app_name: str, file_path: str) -> bytes:
+    async def get_file(self, app_name: str, file_path: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> bytes:
         """Get file content from VFS"""
         endpoint = f"/api/vfs/{file_path}"
-        response = await self._kudu_request(app_name, "GET", endpoint)
+        response = await self._kudu_request(app_name, "GET", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return response.content
 
-    async def list_directory(self, app_name: str, dir_path: str) -> List[Dict[str, Any]]:
+    async def list_directory(self, app_name: str, dir_path: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> List[Dict[str, Any]]:
         """List files in directory"""
         endpoint = f"/api/vfs/{dir_path}/"
-        response = await self._kudu_request(app_name, "GET", endpoint)
+        response = await self._kudu_request(app_name, "GET", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def put_file(self, app_name: str, file_path: str, content: Union[str, bytes]) -> str:
+    async def put_file(
+        self,
+        app_name: str,
+        file_path: str,
+        content: Union[str, bytes],
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> str:
         """Upload file to VFS"""
         endpoint = f"/api/vfs/{file_path}"
         
@@ -183,96 +227,121 @@ class KuduClient(BaseLogicAppClient):
             content = content.encode('utf-8')
         
         headers = {"If-Match": "*"}  # Disable ETag check
-        response = await self._kudu_request(app_name, "PUT", endpoint, data=content, headers=headers)
+        response = await self._kudu_request(app_name, "PUT", endpoint, data=content, headers=headers, azure_context=azure_context)
         response.raise_for_status()
         return f"File {file_path} uploaded successfully"
 
-    async def create_directory(self, app_name: str, dir_path: str) -> str:
+    async def create_directory(self, app_name: str, dir_path: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Create directory in VFS"""
         endpoint = f"/api/vfs/{dir_path}/"
-        response = await self._kudu_request(app_name, "PUT", endpoint)
+        response = await self._kudu_request(app_name, "PUT", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return f"Directory {dir_path} created successfully"
 
-    async def delete_file(self, app_name: str, file_path: str) -> str:
+    async def delete_file(self, app_name: str, file_path: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Delete file from VFS"""
         endpoint = f"/api/vfs/{file_path}"
         headers = {"If-Match": "*"}  # Disable ETag check
-        response = await self._kudu_request(app_name, "DELETE", endpoint, headers=headers)
+        response = await self._kudu_request(app_name, "DELETE", endpoint, headers=headers, azure_context=azure_context)
         response.raise_for_status()
         return f"File {file_path} deleted successfully"
 
     # Zip Operations
-    async def download_directory_as_zip(self, app_name: str, dir_path: str) -> bytes:
+    async def download_directory_as_zip(self, app_name: str, dir_path: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> bytes:
         """Download directory as zip file"""
         endpoint = f"/api/zip/{dir_path}/"
-        response = await self._kudu_request(app_name, "GET", endpoint)
+        response = await self._kudu_request(app_name, "GET", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return response.content
 
-    async def upload_zip_to_directory(self, app_name: str, dir_path: str, zip_content: bytes) -> str:
+    async def upload_zip_to_directory(
+        self,
+        app_name: str,
+        dir_path: str,
+        zip_content: bytes,
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> str:
         """Upload and extract zip file to directory"""
         endpoint = f"/api/zip/{dir_path}/"
         headers = {"Content-Type": "application/zip"}
-        response = await self._kudu_request(app_name, "PUT", endpoint, data=zip_content, headers=headers)
+        response = await self._kudu_request(app_name, "PUT", endpoint, data=zip_content, headers=headers, azure_context=azure_context)
         response.raise_for_status()
         return f"Zip file extracted to {dir_path} successfully"
 
     # Deployment Operations
-    async def list_deployments(self, app_name: str) -> List[Dict[str, Any]]:
+    async def list_deployments(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> List[Dict[str, Any]]:
         """Get list of all deployments"""
-        response = await self._kudu_request(app_name, "GET", "/api/deployments")
+        response = await self._kudu_request(app_name, "GET", "/api/deployments", azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def get_deployment(self, app_name: str, deployment_id: str) -> Dict[str, Any]:
+    async def get_deployment(self, app_name: str, deployment_id: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Any]:
         """Get specific deployment details"""
         endpoint = f"/api/deployments/{deployment_id}"
-        response = await self._kudu_request(app_name, "GET", endpoint)
+        response = await self._kudu_request(app_name, "GET", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def redeploy(self, app_name: str, deployment_id: Optional[str] = None, clean: bool = False, need_file_update: bool = True) -> str:
+    async def redeploy(
+        self,
+        app_name: str,
+        deployment_id: Optional[str] = None,
+        clean: bool = False,
+        need_file_update: bool = True,
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> str:
         """Redeploy a current or previous deployment"""
         endpoint = f"/api/deployments/{deployment_id}" if deployment_id else "/api/deployments"
         data = {
             "clean": clean,
             "needFileUpdate": need_file_update
         }
-        response = await self._kudu_request(app_name, "PUT", endpoint, data=data)
+        response = await self._kudu_request(app_name, "PUT", endpoint, data=data, azure_context=azure_context)
         response.raise_for_status()
         return f"Redeployment {'of ' + deployment_id if deployment_id else ''} initiated successfully"
 
-    async def delete_deployment(self, app_name: str, deployment_id: str) -> str:
+    async def delete_deployment(self, app_name: str, deployment_id: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Delete a deployment"""
         endpoint = f"/api/deployments/{deployment_id}"
-        response = await self._kudu_request(app_name, "DELETE", endpoint)
+        response = await self._kudu_request(app_name, "DELETE", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return f"Deployment {deployment_id} deleted successfully"
 
-    async def get_deployment_log(self, app_name: str, deployment_id: str) -> List[Dict[str, Any]]:
+    async def get_deployment_log(self, app_name: str, deployment_id: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> List[Dict[str, Any]]:
         """Get deployment log entries"""
         endpoint = f"/api/deployments/{deployment_id}/log"
-        response = await self._kudu_request(app_name, "GET", endpoint)
+        response = await self._kudu_request(app_name, "GET", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def get_deployment_log_details(self, app_name: str, deployment_id: str, log_id: str) -> Dict[str, Any]:
+    async def get_deployment_log_details(
+        self,
+        app_name: str,
+        deployment_id: str,
+        log_id: str,
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> Dict[str, Any]:
         """Get specific deployment log entry details"""
         endpoint = f"/api/deployments/{deployment_id}/log/{log_id}"
-        response = await self._kudu_request(app_name, "GET", endpoint)
+        response = await self._kudu_request(app_name, "GET", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
     # Zip Deployment
-    async def zip_deploy_from_url(self, app_name: str, package_uri: str, is_async: bool = True) -> Dict[str, Any]:
+    async def zip_deploy_from_url(
+        self,
+        app_name: str,
+        package_uri: str,
+        is_async: bool = True,
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> Dict[str, Any]:
         """Deploy from zip URL"""
         endpoint = "/api/zipdeploy"
         params = {"isAsync": "true"} if is_async else None
         data = {"packageUri": package_uri}
         headers = {"Content-Type": "application/json"}
-        
-        response = await self._kudu_request(app_name, "PUT", endpoint, data=data, headers=headers, params=params)
+
+        response = await self._kudu_request(app_name, "PUT", endpoint, data=data, headers=headers, params=params, azure_context=azure_context)
         response.raise_for_status()
         
         result = {"message": "Zip deployment initiated successfully"}
@@ -281,101 +350,112 @@ class KuduClient(BaseLogicAppClient):
         
         return result
 
-    async def zip_deploy_from_file(self, app_name: str, zip_content: bytes) -> str:
+    async def zip_deploy_from_file(self, app_name: str, zip_content: bytes, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Deploy from zip file content"""
         endpoint = "/api/zipdeploy"
         headers = {"Content-Type": "application/zip"}
-        response = await self._kudu_request(app_name, "POST", endpoint, data=zip_content, headers=headers)
+        response = await self._kudu_request(app_name, "POST", endpoint, data=zip_content, headers=headers, azure_context=azure_context)
         response.raise_for_status()
         return "Zip deployment completed successfully"
 
     # SSH Key Operations
-    async def get_ssh_key(self, app_name: str, ensure_public_key: bool = True) -> Dict[str, Any]:
+    async def get_ssh_key(
+        self,
+        app_name: str,
+        ensure_public_key: bool = True,
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> Dict[str, Any]:
         """Get or generate SSH keys"""
         params = {"ensurePublicKey": "1"} if ensure_public_key else None
-        response = await self._kudu_request(app_name, "GET", "/api/sshkey", params=params)
+        response = await self._kudu_request(app_name, "GET", "/api/sshkey", params=params, azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def set_private_key(self, app_name: str, private_key: str) -> str:
+    async def set_private_key(self, app_name: str, private_key: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Set private SSH key"""
-        response = await self._kudu_request(app_name, "PUT", "/api/sshkey", data=private_key)
+        response = await self._kudu_request(app_name, "PUT", "/api/sshkey", data=private_key, azure_context=azure_context)
         response.raise_for_status()
         return "Private SSH key set successfully"
 
-    async def delete_ssh_key(self, app_name: str) -> str:
+    async def delete_ssh_key(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Delete SSH key"""
-        response = await self._kudu_request(app_name, "DELETE", "/api/sshkey")
+        response = await self._kudu_request(app_name, "DELETE", "/api/sshkey", azure_context=azure_context)
         response.raise_for_status()
         return "SSH key deleted successfully"
 
     # Environment Operations
-    async def get_environment(self, app_name: str) -> Dict[str, Any]:
+    async def get_environment(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Any]:
         """Get environment information"""
-        response = await self._kudu_request(app_name, "GET", "/api/environment")
+        response = await self._kudu_request(app_name, "GET", "/api/environment", azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def get_settings(self, app_name: str) -> Dict[str, Any]:
+    async def get_settings(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Any]:
         """Get application settings"""
-        response = await self._kudu_request(app_name, "GET", "/api/settings")
+        response = await self._kudu_request(app_name, "GET", "/api/settings", azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
     # Process Operations
-    async def list_processes(self, app_name: str) -> List[Dict[str, Any]]:
+    async def list_processes(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> List[Dict[str, Any]]:
         """List running processes"""
-        response = await self._kudu_request(app_name, "GET", "/api/processes")
+        response = await self._kudu_request(app_name, "GET", "/api/processes", azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def get_process(self, app_name: str, process_id: str) -> Dict[str, Any]:
+    async def get_process(self, app_name: str, process_id: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Any]:
         """Get specific process details"""
         endpoint = f"/api/processes/{process_id}"
-        response = await self._kudu_request(app_name, "GET", endpoint)
+        response = await self._kudu_request(app_name, "GET", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def kill_process(self, app_name: str, process_id: str) -> str:
+    async def kill_process(self, app_name: str, process_id: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Kill a process"""
         endpoint = f"/api/processes/{process_id}"
-        response = await self._kudu_request(app_name, "DELETE", endpoint)
+        response = await self._kudu_request(app_name, "DELETE", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return f"Process {process_id} killed successfully"
 
-    async def create_process_dump(self, app_name: str, process_id: str, dump_type: str = "mini") -> bytes:
+    async def create_process_dump(
+        self,
+        app_name: str,
+        process_id: str,
+        dump_type: str = "mini",
+        azure_context: Optional[Dict[str, Optional[str]]] = None,
+    ) -> bytes:
         """Create process dump"""
         endpoint = f"/api/processes/{process_id}/dump"
         params = {"dumpType": dump_type}
-        response = await self._kudu_request(app_name, "GET", endpoint, params=params)
+        response = await self._kudu_request(app_name, "GET", endpoint, params=params, azure_context=azure_context)
         response.raise_for_status()
         return response.content
 
     # WebJobs Operations
-    async def list_webjobs(self, app_name: str) -> List[Dict[str, Any]]:
+    async def list_webjobs(self, app_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> List[Dict[str, Any]]:
         """List WebJobs"""
-        response = await self._kudu_request(app_name, "GET", "/api/webjobs")
+        response = await self._kudu_request(app_name, "GET", "/api/webjobs", azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def get_webjob(self, app_name: str, job_name: str) -> Dict[str, Any]:
+    async def get_webjob(self, app_name: str, job_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Any]:
         """Get WebJob details"""
         endpoint = f"/api/webjobs/{job_name}"
-        response = await self._kudu_request(app_name, "GET", endpoint)
+        response = await self._kudu_request(app_name, "GET", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return response.json()
 
-    async def start_webjob(self, app_name: str, job_name: str) -> str:
+    async def start_webjob(self, app_name: str, job_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Start a WebJob"""
         endpoint = f"/api/webjobs/{job_name}/start"
-        response = await self._kudu_request(app_name, "POST", endpoint)
+        response = await self._kudu_request(app_name, "POST", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return f"WebJob {job_name} started successfully"
 
-    async def stop_webjob(self, app_name: str, job_name: str) -> str:
+    async def stop_webjob(self, app_name: str, job_name: str, azure_context: Optional[Dict[str, Optional[str]]] = None) -> str:
         """Stop a WebJob"""
         endpoint = f"/api/webjobs/{job_name}/stop"
-        response = await self._kudu_request(app_name, "POST", endpoint)
+        response = await self._kudu_request(app_name, "POST", endpoint, azure_context=azure_context)
         response.raise_for_status()
         return f"WebJob {job_name} stopped successfully"
 

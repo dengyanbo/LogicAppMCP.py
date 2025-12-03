@@ -31,11 +31,12 @@ class KuduMCPHandler:
         try:
             method = request.get("method")
             params = request.get("params", {})
+            azure_context = request.get("azure_context") or params.get("azure_context")
 
             if method == "tools/list":
                 return await self._handle_tools_list()
             elif method == "tools/call":
-                return await self._handle_tools_call(params)
+                return await self._handle_tools_call(params, azure_context)
             elif method == "resources/list":
                 return await self._handle_resources_list()
             elif method == "resources/read":
@@ -464,25 +465,41 @@ class KuduMCPHandler:
             }
         ]
 
+        azure_context_schema = {
+            "type": "object",
+            "description": "Azure context including subscription, resource group, and optional service principal credentials",
+            "properties": {
+                "subscription_id": {"type": "string"},
+                "resource_group": {"type": "string"},
+                "tenant_id": {"type": "string"},
+                "client_id": {"type": "string"},
+                "client_secret": {"type": "string"},
+            },
+        }
+
+        for tool in tools:
+            tool["inputSchema"]["properties"]["azure_context"] = azure_context_schema
+
         return {"result": {"tools": tools}}
 
-    async def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_tools_call(self, params: Dict[str, Any], azure_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle tool call request"""
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
+        merged_context = azure_context or arguments.get("azure_context")
 
         try:
             # SCM Operations
             if tool_name == "get_scm_info":
-                result = await self.client.get_scm_info(arguments["app_name"])
+                result = await self.client.get_scm_info(arguments["app_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             elif tool_name == "clean_repository":
-                result = await self.client.clean_repository(arguments["app_name"])
+                result = await self.client.clean_repository(arguments["app_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             elif tool_name == "delete_repository":
-                result = await self.client.delete_repository(arguments["app_name"])
+                result = await self.client.delete_repository(arguments["app_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             # Command Execution
@@ -490,13 +507,14 @@ class KuduMCPHandler:
                 result = await self.client.execute_command(
                     arguments["app_name"],
                     arguments["command"],
-                    arguments.get("directory", "site\\wwwroot")
+                    arguments.get("directory", "site\\wwwroot"),
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             # VFS File Operations
             elif tool_name == "get_file":
-                content = await self.client.get_file(arguments["app_name"], arguments["file_path"])
+                content = await self.client.get_file(arguments["app_name"], arguments["file_path"], azure_context=merged_context)
                 try:
                     # Try to decode as text
                     text_content = content.decode('utf-8')
@@ -507,7 +525,7 @@ class KuduMCPHandler:
                     return {"result": {"content": [{"type": "text", "text": f"Binary file (base64): {b64_content}"}]}}
 
             elif tool_name == "list_directory":
-                result = await self.client.list_directory(arguments["app_name"], arguments["dir_path"])
+                result = await self.client.list_directory(arguments["app_name"], arguments["dir_path"], azure_context=merged_context)
                 files_info = [self.client._serialize_file_info(f) for f in result]
                 return {"result": {"content": [{"type": "text", "text": json.dumps(files_info, indent=2)}]}}
 
@@ -518,36 +536,36 @@ class KuduMCPHandler:
                 if encoding == "base64":
                     content = base64.b64decode(content)
                 
-                result = await self.client.put_file(arguments["app_name"], arguments["file_path"], content)
+                result = await self.client.put_file(arguments["app_name"], arguments["file_path"], content, azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             elif tool_name == "create_directory":
-                result = await self.client.create_directory(arguments["app_name"], arguments["dir_path"])
+                result = await self.client.create_directory(arguments["app_name"], arguments["dir_path"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             elif tool_name == "delete_file":
-                result = await self.client.delete_file(arguments["app_name"], arguments["file_path"])
+                result = await self.client.delete_file(arguments["app_name"], arguments["file_path"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             # Zip Operations
             elif tool_name == "download_directory_zip":
-                zip_content = await self.client.download_directory_as_zip(arguments["app_name"], arguments["dir_path"])
+                zip_content = await self.client.download_directory_as_zip(arguments["app_name"], arguments["dir_path"], azure_context=merged_context)
                 b64_content = base64.b64encode(zip_content).decode('ascii')
                 return {"result": {"content": [{"type": "text", "text": f"Zip file (base64): {b64_content}"}]}}
 
             elif tool_name == "upload_zip_directory":
                 zip_content = base64.b64decode(arguments["zip_content"])
-                result = await self.client.upload_zip_to_directory(arguments["app_name"], arguments["dir_path"], zip_content)
+                result = await self.client.upload_zip_to_directory(arguments["app_name"], arguments["dir_path"], zip_content, azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             # Deployment Operations
             elif tool_name == "list_deployments":
-                result = await self.client.list_deployments(arguments["app_name"])
+                result = await self.client.list_deployments(arguments["app_name"], azure_context=merged_context)
                 deployments = [self.client._serialize_deployment_info(d) for d in result]
                 return {"result": {"content": [{"type": "text", "text": json.dumps(deployments, indent=2)}]}}
 
             elif tool_name == "get_deployment":
-                result = await self.client.get_deployment(arguments["app_name"], arguments["deployment_id"])
+                result = await self.client.get_deployment(arguments["app_name"], arguments["deployment_id"], azure_context=merged_context)
                 deployment = self.client._serialize_deployment_info(result)
                 return {"result": {"content": [{"type": "text", "text": json.dumps(deployment, indent=2)}]}}
 
@@ -556,23 +574,25 @@ class KuduMCPHandler:
                     arguments["app_name"],
                     arguments.get("deployment_id"),
                     arguments.get("clean", False),
-                    arguments.get("need_file_update", True)
+                    arguments.get("need_file_update", True),
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             elif tool_name == "delete_deployment":
-                result = await self.client.delete_deployment(arguments["app_name"], arguments["deployment_id"])
+                result = await self.client.delete_deployment(arguments["app_name"], arguments["deployment_id"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             elif tool_name == "get_deployment_log":
-                result = await self.client.get_deployment_log(arguments["app_name"], arguments["deployment_id"])
+                result = await self.client.get_deployment_log(arguments["app_name"], arguments["deployment_id"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             elif tool_name == "get_deployment_log_details":
                 result = await self.client.get_deployment_log_details(
                     arguments["app_name"],
                     arguments["deployment_id"],
-                    arguments["log_id"]
+                    arguments["log_id"],
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
@@ -581,79 +601,82 @@ class KuduMCPHandler:
                 result = await self.client.zip_deploy_from_url(
                     arguments["app_name"],
                     arguments["package_uri"],
-                    arguments.get("is_async", True)
+                    arguments.get("is_async", True),
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             elif tool_name == "zip_deploy_from_file":
                 zip_content = base64.b64decode(arguments["zip_content"])
-                result = await self.client.zip_deploy_from_file(arguments["app_name"], zip_content)
+                result = await self.client.zip_deploy_from_file(arguments["app_name"], zip_content, azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             # SSH Key Operations
             elif tool_name == "get_ssh_key":
                 result = await self.client.get_ssh_key(
                     arguments["app_name"],
-                    arguments.get("ensure_public_key", True)
+                    arguments.get("ensure_public_key", True),
+                    azure_context=merged_context,
                 )
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             elif tool_name == "set_private_key":
-                result = await self.client.set_private_key(arguments["app_name"], arguments["private_key"])
+                result = await self.client.set_private_key(arguments["app_name"], arguments["private_key"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             elif tool_name == "delete_ssh_key":
-                result = await self.client.delete_ssh_key(arguments["app_name"])
+                result = await self.client.delete_ssh_key(arguments["app_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             # Environment Operations
             elif tool_name == "get_environment":
-                result = await self.client.get_environment(arguments["app_name"])
+                result = await self.client.get_environment(arguments["app_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             elif tool_name == "get_settings":
-                result = await self.client.get_settings(arguments["app_name"])
+                result = await self.client.get_settings(arguments["app_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             # Process Operations
             elif tool_name == "list_processes":
-                result = await self.client.list_processes(arguments["app_name"])
+                result = await self.client.list_processes(arguments["app_name"], azure_context=merged_context)
                 processes = [self.client._serialize_process_info(p) for p in result]
                 return {"result": {"content": [{"type": "text", "text": json.dumps(processes, indent=2)}]}}
 
             elif tool_name == "get_process":
-                result = await self.client.get_process(arguments["app_name"], arguments["process_id"])
+                result = await self.client.get_process(arguments["app_name"], arguments["process_id"], azure_context=merged_context)
                 process = self.client._serialize_process_info(result)
                 return {"result": {"content": [{"type": "text", "text": json.dumps(process, indent=2)}]}}
 
             elif tool_name == "kill_process":
-                result = await self.client.kill_process(arguments["app_name"], arguments["process_id"])
+                result = await self.client.kill_process(arguments["app_name"], arguments["process_id"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             elif tool_name == "create_process_dump":
                 dump_content = await self.client.create_process_dump(
                     arguments["app_name"],
                     arguments["process_id"],
-                    arguments.get("dump_type", "mini")
+                    arguments.get("dump_type", "mini"),
+                    azure_context=merged_context,
                 )
                 b64_content = base64.b64encode(dump_content).decode('ascii')
                 return {"result": {"content": [{"type": "text", "text": f"Process dump (base64): {b64_content}"}]}}
 
             # WebJobs Operations
             elif tool_name == "list_webjobs":
-                result = await self.client.list_webjobs(arguments["app_name"])
+                result = await self.client.list_webjobs(arguments["app_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             elif tool_name == "get_webjob":
-                result = await self.client.get_webjob(arguments["app_name"], arguments["job_name"])
+                result = await self.client.get_webjob(arguments["app_name"], arguments["job_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}}
 
             elif tool_name == "start_webjob":
-                result = await self.client.start_webjob(arguments["app_name"], arguments["job_name"])
+                result = await self.client.start_webjob(arguments["app_name"], arguments["job_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             elif tool_name == "stop_webjob":
-                result = await self.client.stop_webjob(arguments["app_name"], arguments["job_name"])
+                result = await self.client.stop_webjob(arguments["app_name"], arguments["job_name"], azure_context=merged_context)
                 return {"result": {"content": [{"type": "text", "text": result}]}}
 
             else:
