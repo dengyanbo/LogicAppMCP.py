@@ -300,24 +300,39 @@ curl -X POST http://localhost:8000/mcp/kudu/request \
 
 ## Configuration
 
-### Environment Variables
+### Per-request authentication
 
-The Kudu client uses the same Azure configuration as other services:
+Kudu MCP calls include Azure context alongside the operation arguments:
 
-```env
-# Azure Authentication
-AZURE_SUBSCRIPTION_ID=your-subscription-id
-AZURE_RESOURCE_GROUP=your-resource-group
-AZURE_TENANT_ID=your-tenant-id
-AZURE_CLIENT_ID=your-client-id
-AZURE_CLIENT_SECRET=your-client-secret
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "list_directory",
+    "arguments": {
+      "app_name": "my-logicapp",
+      "dir_path": "site/wwwroot",
+      "azure": {
+        "subscription_id": "<sub>",
+        "resource_group": "<rg>",
+        "tenant_id": "<tenant>",
+        "client_id": "<app-id>",
+        "client_secret": "<optional-secret>"
+      }
+    }
+  }
+}
 ```
 
-### Authentication
+- `subscription_id` and `resource_group` must be provided per call.
+- Provide `client_secret` (with `tenant_id`/`client_id`) for service principal auth; when omitted, the handler uses `az login`/`DefaultAzureCredential` on the host.
+- Environment variables (`AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`) are optional defaults when a request leaves fields blank.
+
+### Authentication flow
 
 Kudu operations require publishing profile authentication. The client automatically:
 
-1. **Retrieves publishing profile** using Azure SDK
+1. **Retrieves publishing profile** using the Azure credentials from the request/defaults
 2. **Extracts Kudu credentials** from the profile
 3. **Creates basic auth header** for Kudu API requests
 

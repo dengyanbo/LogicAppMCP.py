@@ -206,21 +206,31 @@ request = {
 response = await handler.handle_request(request)
 ```
 
-## Configuration
+## Authentication & configuration
 
-The handler requires the following Azure configuration (set in `app/config.py`):
+MCP clients pass the Azure context with each request instead of relying on a `.env` file:
 
-```python
-# Azure subscription settings
-AZURE_SUBSCRIPTION_ID = "your-subscription-id"
-AZURE_RESOURCE_GROUP = "your-resource-group"
-LOGIC_APP_LOCATION = "your-preferred-location"
-
-# Azure authentication
-AZURE_CLIENT_ID = "your-client-id"
-AZURE_CLIENT_SECRET = "your-client-secret"
-AZURE_TENANT_ID = "your-tenant-id"
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "list_consumption_logic_apps",
+    "arguments": {
+      "azure": {
+        "subscription_id": "<sub>",
+        "resource_group": "<rg>",
+        "tenant_id": "<tenant>",
+        "client_id": "<app-id>",
+        "client_secret": "<optional-secret>"
+      }
+    }
+  }
+}
 ```
+
+- `subscription_id` and `resource_group` are required per request.
+- Supply `tenant_id`/`client_id`/`client_secret` to use a service principal. If `client_secret` is omitted, the handler falls back to `az login`/`DefaultAzureCredential` on the host machine.
+- Environment variables in `app/config.py` remain optional defaults (used when a request omits fields) and can be set via your process manager; they are no longer required for normal operation.
 
 ## Error Handling
 
