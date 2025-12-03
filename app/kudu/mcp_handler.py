@@ -22,9 +22,9 @@ class KuduMCPHandler:
     management through Azure Kudu REST API operations.
     """
 
-    def __init__(self):
+    def __init__(self, azure_context: Optional[Dict[str, Any]] = None):
         """Initialize Kudu MCP handler"""
-        self.client = KuduClient()
+        self.client = KuduClient(azure_context=azure_context)
 
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle MCP request and route to appropriate method"""
@@ -486,7 +486,7 @@ class KuduMCPHandler:
         """Handle tool call request"""
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
-        merged_context = azure_context or arguments.get("azure_context")
+        merged_context = azure_context or arguments.get("azure_context") or self.client.azure_context
 
         try:
             # SCM Operations

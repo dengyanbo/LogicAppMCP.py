@@ -18,9 +18,20 @@ class TestKuduClient:
     """Test suite for KuduClient"""
 
     @pytest.fixture
-    def kudu_client(self):
+    def azure_context(self):
+        """Shared Azure context for tests"""
+        return {
+            "subscription_id": "context-sub",
+            "resource_group": "context-rg",
+            "tenant_id": None,
+            "client_id": None,
+            "client_secret": None,
+        }
+
+    @pytest.fixture
+    def kudu_client(self, azure_context):
         """Create KuduClient instance for testing"""
-        return KuduClient()
+        return KuduClient(azure_context=azure_context)
 
     @pytest.fixture
     def mock_http_response(self):
@@ -101,7 +112,7 @@ class TestKuduClient:
         result = await kudu_client.get_scm_info("test-app")
 
         assert result == mock_scm_data
-        mock_request.assert_called_once_with("test-app", "GET", "/api/scm/info", azure_context=None)
+        mock_request.assert_called_once_with("test-app", "GET", "/api/scm/info", azure_context=kudu_client.azure_context)
 
     @patch('app.kudu.client.KuduClient._kudu_request')
     @pytest.mark.asyncio
@@ -112,7 +123,7 @@ class TestKuduClient:
         result = await kudu_client.clean_repository("test-app")
 
         assert result == "Repository cleaned successfully"
-        mock_request.assert_called_once_with("test-app", "POST", "/api/scm/clean", azure_context=None)
+        mock_request.assert_called_once_with("test-app", "POST", "/api/scm/clean", azure_context=kudu_client.azure_context)
 
     @patch('app.kudu.client.KuduClient._kudu_request')
     @pytest.mark.asyncio
@@ -123,7 +134,7 @@ class TestKuduClient:
         result = await kudu_client.delete_repository("test-app")
 
         assert result == "Repository deleted successfully"
-        mock_request.assert_called_once_with("test-app", "DELETE", "/api/scm", azure_context=None)
+        mock_request.assert_called_once_with("test-app", "DELETE", "/api/scm", azure_context=kudu_client.azure_context)
 
     @patch('app.kudu.client.KuduClient._kudu_request')
     @pytest.mark.asyncio
@@ -145,7 +156,7 @@ class TestKuduClient:
             "POST",
             "/api/command",
             data={"command": "echo Hello World", "dir": "site\\wwwroot"},
-            azure_context=None,
+            azure_context=kudu_client.azure_context,
         )
 
     @patch('app.kudu.client.KuduClient._kudu_request')
@@ -159,7 +170,7 @@ class TestKuduClient:
         result = await kudu_client.get_file("test-app", "site/wwwroot/test.txt")
 
         assert result == file_content
-        mock_request.assert_called_once_with("test-app", "GET", "/api/vfs/site/wwwroot/test.txt", azure_context=None)
+        mock_request.assert_called_once_with("test-app", "GET", "/api/vfs/site/wwwroot/test.txt", azure_context=kudu_client.azure_context)
 
     @patch('app.kudu.client.KuduClient._kudu_request')
     @pytest.mark.asyncio
@@ -175,7 +186,7 @@ class TestKuduClient:
         result = await kudu_client.list_directory("test-app", "site/wwwroot")
 
         assert result == mock_files
-        mock_request.assert_called_once_with("test-app", "GET", "/api/vfs/site/wwwroot/", azure_context=None)
+        mock_request.assert_called_once_with("test-app", "GET", "/api/vfs/site/wwwroot/", azure_context=kudu_client.azure_context)
 
     def test_serialize_file_info(self):
         """Test file info serialization"""

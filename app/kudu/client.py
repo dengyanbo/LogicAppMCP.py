@@ -17,7 +17,6 @@ from urllib.parse import urljoin
 import httpx
 from azure.identity import ClientSecretCredential, DefaultAzureCredential
 
-from ..config import settings
 from ..shared.base_client import BaseLogicAppClient
 
 
@@ -40,17 +39,20 @@ class KuduClient(BaseLogicAppClient):
     def _resolve_azure_context(self, azure_context: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Optional[str]]:
         """Merge provided Azure context with stored values and settings fallback."""
         merged_context: Dict[str, Optional[str]] = {}
+
         merged_context.update({
-            "subscription_id": settings.AZURE_SUBSCRIPTION_ID,
-            "resource_group": settings.AZURE_RESOURCE_GROUP,
-            "tenant_id": settings.AZURE_TENANT_ID,
-            "client_id": settings.AZURE_CLIENT_ID,
-            "client_secret": settings.AZURE_CLIENT_SECRET,
+            "subscription_id": self.subscription_id,
+            "resource_group": self.resource_group,
         })
 
         merged_context.update(self.azure_context)
         if azure_context:
             merged_context.update(azure_context)
+
+        if not merged_context.get("subscription_id"):
+            raise ValueError("Azure subscription_id is required")
+        if not merged_context.get("resource_group"):
+            raise ValueError("Azure resource_group is required")
 
         return merged_context
 
