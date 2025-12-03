@@ -174,21 +174,31 @@ response = await handler.handle_request(request)
 
 ## Configuration
 
-### Environment Variables
+### Per-request authentication
 
-The client uses these configuration settings from `app/config.py`:
+Standard plan tools expect the Azure scope in each MCP call:
 
-```python
-# Azure Authentication
-AZURE_SUBSCRIPTION_ID = "your-subscription-id"
-AZURE_RESOURCE_GROUP = "your-resource-group"
-AZURE_TENANT_ID = "your-tenant-id"
-AZURE_CLIENT_ID = "your-client-id"
-AZURE_CLIENT_SECRET = "your-client-secret"
-
-# Logic App Settings
-LOGIC_APP_LOCATION = "eastus"
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "cli_list_standard_logic_apps",
+    "arguments": {
+      "azure": {
+        "subscription_id": "<sub>",
+        "resource_group": "<rg>",
+        "tenant_id": "<tenant>",
+        "client_id": "<app-id>",
+        "client_secret": "<optional-secret>"
+      }
+    }
+  }
+}
 ```
+
+- `subscription_id` and `resource_group` are always required.
+- Provide `client_secret` plus `tenant_id`/`client_id` for service principal auth. If `client_secret` is omitted, the server falls back to `az login`/`DefaultAzureCredential` on the host.
+- Environment variables in `app/config.py` (`AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `LOGIC_APP_LOCATION`) are optional defaults when a request omits a field; a `.env` file is no longer required.
 
 ### Prerequisites
 

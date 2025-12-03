@@ -8,22 +8,16 @@ git clone <repository-url>
 cd logicappmcp.py
 uv sync
 
-# minimal environment (service principal)
-cat > .env <<'EOF'
-AZURE_SUBSCRIPTION_ID=...
-AZURE_RESOURCE_GROUP=...
-AZURE_TENANT_ID=...
-AZURE_CLIENT_ID=...
-AZURE_CLIENT_SECRET=...
-EOF
+# authenticate locally (used when no client_secret is supplied)
+az login
 
 uv run python -m app.main &
 
+# include Azure context in each MCP request
 curl http://localhost:8000/health            # health
 curl -H "Content-Type: application/json" \
-  -d '{"method":"tools/list","params":{}}' http://localhost:8000/mcp/request
-curl -H "Content-Type: application/json" \
-  -d '{"method":"tools/list","params":{}}' http://localhost:8000/mcp/consumption/request
+  -d '{"method":"tools/call","params":{"name":"list_consumption_logic_apps","arguments":{"azure":{"subscription_id":"<sub>","resource_group":"<rg>","tenant_id":"<tenant>","client_id":"<app-id>"}}}}' \
+  http://localhost:8000/mcp/consumption/request
 ```
 
 ## Architecture at a glance
@@ -56,10 +50,33 @@ HTTP/MCP request
 - `POST /mcp/standard/request` – Standard MCP tools (list, get, deploy, monitor).
 - `POST /mcp/kudu/request` – Kudu MCP tools (file browse, commands, logs).
 
-## Environment
-- Create a `.env` file or set variables via your process manager.
-- Required Azure credentials: `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`.
-- Optional server tuning: `HOST` (default `localhost`), `PORT` (default `8000`), `DEBUG` (bool), `LOGIC_APP_LOCATION` (default region for new workflows).
+### MCP request payloads
+- Every `tools/call` payload should include an `azure` object inside `params.arguments` that supplies `subscription_id` and `resource_group`, plus optional `tenant_id`/`client_id`/`client_secret` for service principal auth.
+- When `client_secret` is not present, the server authenticates with the locally available Azure CLI/device login (`az login`) via `DefaultAzureCredential`.
+- Example (Consumption):
+  ```json
+  {
+    "method": "tools/call",
+    "params": {
+      "name": "get_consumption_logic_app",
+      "arguments": {
+        "workflow_name": "my-workflow",
+        "azure": {
+          "subscription_id": "<sub>",
+          "resource_group": "<rg>",
+          "tenant_id": "<tenant>",
+          "client_id": "<app-id>"
+        }
+      }
+    }
+  }
+  ```
+
+## Authentication & environment
+- MCP requests should include the Azure context for the target Logic App: `subscription_id` and `resource_group` are required; `tenant_id`/`client_id`/`client_secret` are optional.
+- When a `client_secret` is supplied, the server authenticates with that service principal; otherwise it falls back to `az login`/`DefaultAzureCredential` on the host.
+- Environment variables are optional and act as defaults when a request omits values: `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `LOGIC_APP_LOCATION`.
+- Server tuning knobs: `HOST` (default `localhost`), `PORT` (default `8000`), `DEBUG` (bool).
 
 ## Deployment
 - **Local development**: `uv sync` then `uv run python -m app.main` with the environment above. Useful for MCP client integration tests and local Kudu calls through tunnels or dev resources.
