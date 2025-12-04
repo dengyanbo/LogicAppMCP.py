@@ -39,7 +39,7 @@ class KuduMCPHandler:
         elif isinstance(params.get("azure"), dict):
             azure_params = params.get("azure", {})
 
-        return AzureContext(
+        context = AzureContext(
             subscription_id=azure_params.get("subscription_id")
             or params.get("subscription_id")
             or base_context.subscription_id,
@@ -56,6 +56,9 @@ class KuduMCPHandler:
             or params.get("client_secret")
             or base_context.client_secret,
         )
+
+        context.normalize_placeholders()
+        return context
 
     def _build_azure_schema(self) -> Dict[str, Any]:
         """Reusable Azure context schema shared by all tools."""
@@ -102,6 +105,34 @@ class KuduMCPHandler:
     def _get_client(self, params: Dict[str, Any]) -> KuduClient:
         """Get a client configured for the current request context."""
         context = self._extract_azure_context(params)
+        missing_scope = [
+            name
+            for name, value in {
+                "subscription_id": context.subscription_id,
+                "resource_group": context.resource_group,
+            }.items()
+            if not value
+        ]
+        missing_auth = [
+            name
+            for name, value in {
+                "tenant_id": context.tenant_id,
+                "client_id": context.client_id,
+                "client_secret": context.client_secret,
+            }.items()
+            if not value
+        ]
+
+        if missing_scope:
+            raise ValueError(
+                "Azure scope is missing. Please supply subscription_id and resource_group via the 'azure_context' or 'azure' envelope."
+            )
+
+        if missing_auth:
+            raise ValueError(
+                "Azure credentials are missing. Provide tenant_id, client_id, and client_secret via the 'azure_context' or 'azure' envelope when calling MCP tools."
+            )
+
         if self.client:
             self.client.configure_context(context)
         else:
@@ -118,11 +149,17 @@ class KuduMCPHandler:
             if method == "tools/list":
                 return await self._handle_tools_list()
             elif method == "tools/call":
-                return await self._handle_tools_call(params, azure_context)
+                try:
+                    return await self._handle_tools_call(params, azure_context)
+                except ValueError as exc:
+                    return {"error": {"code": -32602, "message": str(exc)}}
             elif method == "resources/list":
                 return await self._handle_resources_list()
             elif method == "resources/read":
-                return await self._handle_resources_read(params)
+                try:
+                    return await self._handle_resources_read(params)
+                except ValueError as exc:
+                    return {"error": {"code": -32602, "message": str(exc)}}
             else:
                 return {
                     "error": {

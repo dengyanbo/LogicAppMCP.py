@@ -11,7 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import List, Dict, Any
 
+from .cert_utils import ensure_requests_ca_bundle
 from .config import settings
+
+# Ensure requests/urllib3 have a valid CA bundle before any Azure SDK modules import
+ensure_requests_ca_bundle()
+
 from .consumption.mcp_handler import ConsumptionMCPHandler
 from .standard.mcp_handler import StandardMCPHandler
 from .kudu.mcp_handler import KuduMCPHandler

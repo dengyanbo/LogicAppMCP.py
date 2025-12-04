@@ -21,7 +21,21 @@ async def test_tools_list_and_call_validation(monkeypatch: pytest.MonkeyPatch):
     assert "tools" in res["result"]
 
     # validate required params error
-    call = {"method": "tools/call", "params": {"name": "get_consumption_logic_app", "arguments": {}}}
+    call = {
+        "method": "tools/call",
+        "params": {
+            "name": "get_consumption_logic_app",
+            "arguments": {
+                "azure_context": {
+                    "subscription_id": "sub",
+                    "resource_group": "rg",
+                    "tenant_id": "tenant",
+                    "client_id": "client",
+                    "client_secret": "secret",
+                }
+            },
+        },
+    }
     res2 = await handler.handle_request(call)
     assert "error" in res2 and res2["error"]["code"] == -32602
 
@@ -32,7 +46,19 @@ async def test_tools_list_and_call_validation(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(handler.logicapp_client, "get_logic_app", fake_get_logic_app)
     good_call = {
         "method": "tools/call",
-        "params": {"name": "get_consumption_logic_app", "arguments": {"workflow_name": "wf1"}},
+        "params": {
+            "name": "get_consumption_logic_app",
+            "arguments": {
+                "workflow_name": "wf1",
+                "azure_context": {
+                    "subscription_id": "sub",
+                    "resource_group": "rg",
+                    "tenant_id": "tenant",
+                    "client_id": "client",
+                    "client_secret": "secret",
+                },
+            },
+        },
     }
     ok = await handler.handle_request(good_call)
     # result content is json text; ensure it decodes

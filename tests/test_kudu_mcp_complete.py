@@ -21,6 +21,24 @@ class TestKuduMCPHandler:
         """Create KuduMCPHandler instance for testing"""
         return KuduMCPHandler()
 
+    @pytest.fixture
+    def azure_context_payload(self):
+        from app.config import settings
+
+        settings.AZURE_SUBSCRIPTION_ID = "sub"
+        settings.AZURE_RESOURCE_GROUP = "rg"
+        settings.AZURE_TENANT_ID = "tenant"
+        settings.AZURE_CLIENT_ID = "client"
+        settings.AZURE_CLIENT_SECRET = "secret"
+
+        return {
+            "subscription_id": "sub",
+            "resource_group": "rg",
+            "tenant_id": "tenant",
+            "client_id": "client",
+            "client_secret": "secret",
+        }
+
     @pytest.mark.asyncio
     async def test_handle_tools_list(self, kudu_mcp_handler):
         """Test tools/list method returns all available tools"""

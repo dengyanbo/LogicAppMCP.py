@@ -41,7 +41,7 @@ class StandardMCPHandler:
         elif isinstance(params.get("azure"), dict):
             azure_params = params.get("azure", {})
 
-        return AzureContext(
+        context = AzureContext(
             subscription_id=azure_params.get("subscription_id")
             or params.get("subscription_id")
             or base_context.subscription_id,
@@ -58,6 +58,9 @@ class StandardMCPHandler:
             or params.get("client_secret")
             or base_context.client_secret,
         )
+
+        context.normalize_placeholders()
+        return context
 
     def _build_azure_schema(self) -> Dict[str, Any]:
         """Reusable Azure context schema shared by all tools."""
@@ -104,6 +107,34 @@ class StandardMCPHandler:
     def _get_client(self, params: Dict[str, Any]) -> StandardLogicAppClient:
         """Get a client configured for the current request context."""
         context = self._extract_azure_context(params)
+        missing_scope = [
+            name
+            for name, value in {
+                "subscription_id": context.subscription_id,
+                "resource_group": context.resource_group,
+            }.items()
+            if not value
+        ]
+        missing_auth = [
+            name
+            for name, value in {
+                "tenant_id": context.tenant_id,
+                "client_id": context.client_id,
+                "client_secret": context.client_secret,
+            }.items()
+            if not value
+        ]
+
+        if missing_scope:
+            raise ValueError(
+                "Azure scope is missing. Please supply subscription_id and resource_group via the 'azure_context' or 'azure' envelope."
+            )
+
+        if missing_auth:
+            raise ValueError(
+                "Azure credentials are missing. Provide tenant_id, client_id, and client_secret via the 'azure_context' or 'azure' envelope when calling MCP tools."
+            )
+
         if self.logicapp_client:
             self.logicapp_client.configure_context(context)
         else:
@@ -129,13 +160,29 @@ class StandardMCPHandler:
             elif method == "tools/call":
                 if not isinstance(params, dict):
                     return {"id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
-                response = await self._handle_tools_call(params)
+                try:
+                    response = await self._handle_tools_call(params)
+                except ValueError as exc:
+                    response = {
+                        "error": {
+                            "code": -32602,
+                            "message": str(exc),
+                        }
+                    }
             elif method == "resources/list":
                 response = await self._handle_resources_list()
             elif method == "resources/read":
                 if not isinstance(params, dict):
                     return {"id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
-                response = await self._handle_resources_read(params)
+                try:
+                    response = await self._handle_resources_read(params)
+                except ValueError as exc:
+                    response = {
+                        "error": {
+                            "code": -32602,
+                            "message": str(exc),
+                        }
+                    }
             else:
                 response = {
                     "error": {

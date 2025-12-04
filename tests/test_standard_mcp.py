@@ -1,4 +1,5 @@
 import json
+import json
 import pytest
 
 from app.standard.mcp_handler import StandardMCPHandler
@@ -20,7 +21,23 @@ async def test_tools_list_and_call_validation(monkeypatch: pytest.MonkeyPatch):
     assert "tools" in res["result"]
 
     # missing required
-    res2 = await handler.handle_request({"method": "tools/call", "params": {"name": "get_standard_logic_app", "arguments": {}}})
+    res2 = await handler.handle_request(
+        {
+            "method": "tools/call",
+            "params": {
+                "name": "get_standard_logic_app",
+                "arguments": {
+                    "azure_context": {
+                        "subscription_id": "sub",
+                        "resource_group": "rg",
+                        "tenant_id": "tenant",
+                        "client_id": "client",
+                        "client_secret": "secret",
+                    }
+                },
+            },
+        }
+    )
     assert "error" in res2 and res2["error"]["code"] == -32602
 
     # stub client
@@ -28,7 +45,24 @@ async def test_tools_list_and_call_validation(monkeypatch: pytest.MonkeyPatch):
         return {"name": name, "plan_type": "standard"}
 
     monkeypatch.setattr(handler.logicapp_client, "get_logic_app", fake_get_logic_app)
-    ok = await handler.handle_request({"method": "tools/call", "params": {"name": "get_standard_logic_app", "arguments": {"workflow_name": "wf2"}}})
+    ok = await handler.handle_request(
+        {
+            "method": "tools/call",
+            "params": {
+                "name": "get_standard_logic_app",
+                "arguments": {
+                    "workflow_name": "wf2",
+                    "azure_context": {
+                        "subscription_id": "sub",
+                        "resource_group": "rg",
+                        "tenant_id": "tenant",
+                        "client_id": "client",
+                        "client_secret": "secret",
+                    },
+                },
+            },
+        }
+    )
     payload = ok["result"]["content"][0]["text"]
     data = json.loads(payload)
     assert data["plan_type"] == "standard"

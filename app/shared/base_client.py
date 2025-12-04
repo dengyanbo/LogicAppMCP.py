@@ -37,6 +37,16 @@ class AzureContext:
             client_secret=settings_module.AZURE_CLIENT_SECRET,
         )
 
+    def normalize_placeholders(self) -> None:
+        """Clear known placeholder values so we can detect missing scope."""
+        placeholder_subscriptions = {"test-sub-id", ""}
+        placeholder_resource_groups = {"test-rg", ""}
+
+        if self.subscription_id in placeholder_subscriptions:
+            self.subscription_id = None
+        if self.resource_group in placeholder_resource_groups:
+            self.resource_group = None
+
     def create_credential(self) -> DefaultAzureCredential | ClientSecretCredential:
         """Build a credential, favoring client secret when provided."""
         if self.tenant_id and self.client_id and self.client_secret:
