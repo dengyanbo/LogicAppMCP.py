@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+gunicorn
 httpx
 azure-identity
 azure-mgmt-logic
