@@ -20,6 +20,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("PORT", "WEBSITES_PORT"),
     )
     DEBUG: bool = True
+    LOG_LEVEL: str = "INFO"
     
     # Azure configuration
     AZURE_SUBSCRIPTION_ID: Optional[str] = "test-sub-id"

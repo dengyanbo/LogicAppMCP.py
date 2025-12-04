@@ -76,7 +76,13 @@ HTTP/MCP request
 - MCP requests should include the Azure context for the target Logic App: `subscription_id` and `resource_group` are required; `tenant_id`/`client_id`/`client_secret` are optional.
 - When a `client_secret` is supplied, the server authenticates with that service principal; otherwise it falls back to `az login`/`DefaultAzureCredential` on the host.
 - Environment variables are optional and act as defaults when a request omits values: `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `LOGIC_APP_LOCATION`.
+- Logging defaults to `INFO` but can be adjusted per deployment with the `LOG_LEVEL` environment variable (e.g., `DEBUG` for more verbose diagnostics).
 - Server tuning knobs: `HOST` (default `localhost`), `PORT` (default `8000`), `DEBUG` (bool).
+
+## Logging
+- Application and Uvicorn logs are unified through a shared logging configuration that emits timestamped messages to stdout.
+- Incoming HTTP requests are logged with method, path, status code, and duration to simplify troubleshooting.
+- Set `LOG_LEVEL` to control verbosity (e.g., `DEBUG` for detailed troubleshooting, `WARNING` for quieter operation).
 
 ## Deployment
 - **Local development**: `uv sync` then `uv run python -m app.main` with the environment above. Useful for MCP client integration tests and local Kudu calls through tunnels or dev resources.
