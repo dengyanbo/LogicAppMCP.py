@@ -83,10 +83,12 @@ HTTP/MCP request
 - Application and Uvicorn logs are unified through a shared logging configuration that emits timestamped messages to stdout.
 - Incoming HTTP requests are logged with method, path, status code, and duration to simplify troubleshooting.
 - Set `LOG_LEVEL` to control verbosity (e.g., `DEBUG` for detailed troubleshooting, `WARNING` for quieter operation).
+- **Azure Web App best practice:** enable App Service application logging/streaming so stdout/stderr from the container is captured (Portal → App Service → Logs → Application Logging) and use `az webapp log tail` for live diagnostics.
 
 ## Deployment
 - **Local development**: `uv sync` then `uv run python -m app.main` with the environment above. Useful for MCP client integration tests and local Kudu calls through tunnels or dev resources.
 - **Azure App Service**: Deploy the FastAPI app (e.g., via `az webapp up` or CI/CD). Provide the same environment variables in App Service settings; enable managed identity or keep the service principal secrets in Key Vault/App Settings. Expose port 8000 internally—App Service handles HTTP binding.
+  - The repo includes an `application.py` shim so the default App Service gunicorn command (`gunicorn --bind=0.0.0.0 --timeout 600 application:app`) resolves the FastAPI app without needing a custom startup command.
 
 ## Additional docs
 - Consumption plan details: [app/consumption/README.md](app/consumption/README.md)
