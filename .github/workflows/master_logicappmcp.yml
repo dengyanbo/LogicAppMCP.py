@@ -24,6 +24,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Ensure gunicorn config is present
+        run: |
+          test -f gunicorn.conf.py
+          test -f application.py
+
       # 🛠️ Local Build Section (Optional)
 
       # This section catches build issues before deployment. Remove it if you prefer to rely solely on Oryx during deployment.
@@ -73,3 +78,5 @@ jobs:
           app-name: 'LogicAppMCP'
           slot-name: 'Production'
           package: .
+          app-settings: |
+            -GUNICORN_CMD_ARGS --config gunicorn.conf.py
