@@ -89,6 +89,7 @@ HTTP/MCP request
 - **Local development**: `uv sync` then `uv run python -m app.main` with the environment above. Useful for MCP client integration tests and local Kudu calls through tunnels or dev resources.
 - **Azure App Service**: Deploy the FastAPI app (e.g., via `az webapp up` or CI/CD). Provide the same environment variables in App Service settings; enable managed identity or keep the service principal secrets in Key Vault/App Settings. Expose port 8000 internally—App Service handles HTTP binding.
   - The repo includes an `application.py` shim so the default App Service gunicorn command (`gunicorn --bind=0.0.0.0 --timeout 600 application:app`) resolves the FastAPI app without needing a custom startup command.
+  - A `gunicorn.conf.py` is present to force the ASGI-compatible `uvicorn.workers.UvicornWorker`, preventing `FastAPI.__call__()` errors when the platform auto-starts gunicorn.
 
 ## Additional docs
 - Consumption plan details: [app/consumption/README.md](app/consumption/README.md)
