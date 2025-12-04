@@ -40,3 +40,19 @@ async def test_tools_list_and_call_validation(monkeypatch: pytest.MonkeyPatch):
     data = json.loads(payload)
     assert data["name"] == "wf1"
 
+
+@pytest.mark.asyncio
+async def test_tools_list_includes_azure_context():
+    handler = ConsumptionMCPHandler()
+    res = await handler.handle_request({"method": "tools/list"})
+    tools = res["result"]["tools"]
+
+    for tool in tools:
+        props = tool.get("inputSchema", {}).get("properties", {})
+        assert "azure_context" in props or "azure" in props
+        azure_context = props.get("azure_context") or props.get("azure")
+        assert azure_context.get("type") == "object"
+        azure_props = azure_context.get("properties", {})
+        for expected in {"subscription_id", "resource_group", "tenant_id", "client_id", "client_secret"}:
+            assert expected in azure_props
+

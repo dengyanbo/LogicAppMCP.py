@@ -4,6 +4,7 @@ Standard MCP Handler
 Handles MCP requests specific to Logic App Standard (dedicated hosting) plans.
 """
 
+import copy
 import json
 from typing import Dict, Any, List, Optional
 from .client import StandardLogicAppClient
@@ -57,6 +58,36 @@ class StandardMCPHandler:
             or params.get("client_secret")
             or base_context.client_secret,
         )
+
+    def _build_azure_schema(self) -> Dict[str, Any]:
+        """Reusable Azure context schema shared by all tools."""
+        return {
+            "type": "object",
+            "description": "Azure credentials and target resource scope.",
+            "properties": {
+                "subscription_id": {
+                    "type": "string",
+                    "description": "Azure subscription ID",
+                },
+                "resource_group": {
+                    "type": "string",
+                    "description": "Azure resource group",
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "description": "Azure AD tenant ID (optional when using DefaultAzureCredential)",
+                },
+                "client_id": {
+                    "type": "string",
+                    "description": "Service principal client ID (optional when using DefaultAzureCredential)",
+                },
+                "client_secret": {
+                    "type": "string",
+                    "description": "Service principal client secret (optional when using DefaultAzureCredential)",
+                },
+            },
+            "required": ["subscription_id", "resource_group"],
+        }
 
     def _strip_azure_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Remove Azure context keys before forwarding to client methods."""
@@ -642,6 +673,14 @@ class StandardMCPHandler:
                 }
             }
         ]
+        azure_schema = self._build_azure_schema()
+        for tool in tools:
+            schema = tool.get("inputSchema")
+            if not isinstance(schema, dict):
+                continue
+            properties = schema.setdefault("properties", {})
+            properties.setdefault("azure_context", copy.deepcopy(azure_schema))
+            properties.setdefault("azure", copy.deepcopy(azure_schema))
         self._tools_cache = tools
         self._required_by_tool = {}
         for tool in tools:

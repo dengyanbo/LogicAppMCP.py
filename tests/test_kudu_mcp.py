@@ -25,7 +25,7 @@ class TestKuduMCPHandler:
     async def test_handle_tools_list(self, kudu_mcp_handler):
         """Test tools/list method returns all available tools"""
         request = {"method": "tools/list"}
-        
+
         response = await kudu_mcp_handler.handle_request(request)
         
         assert "result" in response
@@ -50,6 +50,20 @@ class TestKuduMCPHandler:
             assert "inputSchema" in tool
             assert "type" in tool["inputSchema"]
             assert "properties" in tool["inputSchema"]
+
+    @pytest.mark.asyncio
+    async def test_tools_list_includes_azure_context(self, kudu_mcp_handler):
+        response = await kudu_mcp_handler.handle_request({"method": "tools/list"})
+        tools = response["result"]["tools"]
+
+        for tool in tools:
+            props = tool.get("inputSchema", {}).get("properties", {})
+            assert "azure_context" in props or "azure" in props
+            azure_context = props.get("azure_context") or props.get("azure")
+            assert azure_context.get("type") == "object"
+            azure_props = azure_context.get("properties", {})
+            for expected in {"subscription_id", "resource_group", "tenant_id", "client_id", "client_secret"}:
+                assert expected in azure_props
 
     @pytest.mark.asyncio
     async def test_handle_resources_list(self, kudu_mcp_handler):

@@ -7,6 +7,7 @@ access to Logic App Standard management, debugging, and file operations.
 Implements MCP 2024-11-05 specification with 30+ Kudu operations.
 """
 
+import copy
 import json
 import base64
 from typing import Any, Dict, List, Optional
@@ -55,6 +56,36 @@ class KuduMCPHandler:
             or params.get("client_secret")
             or base_context.client_secret,
         )
+
+    def _build_azure_schema(self) -> Dict[str, Any]:
+        """Reusable Azure context schema shared by all tools."""
+        return {
+            "type": "object",
+            "description": "Azure credentials and target resource scope.",
+            "properties": {
+                "subscription_id": {
+                    "type": "string",
+                    "description": "Azure subscription ID",
+                },
+                "resource_group": {
+                    "type": "string",
+                    "description": "Azure resource group",
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "description": "Azure AD tenant ID (optional when using DefaultAzureCredential)",
+                },
+                "client_id": {
+                    "type": "string",
+                    "description": "Service principal client ID (optional when using DefaultAzureCredential)",
+                },
+                "client_secret": {
+                    "type": "string",
+                    "description": "Service principal client secret (optional when using DefaultAzureCredential)",
+                },
+            },
+            "required": ["subscription_id", "resource_group"],
+        }
 
     def _strip_azure_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Remove Azure context keys before forwarding to client methods."""
@@ -516,20 +547,14 @@ class KuduMCPHandler:
             }
         ]
 
-        azure_context_schema = {
-            "type": "object",
-            "description": "Azure context including subscription, resource group, and optional service principal credentials",
-            "properties": {
-                "subscription_id": {"type": "string"},
-                "resource_group": {"type": "string"},
-                "tenant_id": {"type": "string"},
-                "client_id": {"type": "string"},
-                "client_secret": {"type": "string"},
-            },
-        }
-
+        azure_schema = self._build_azure_schema()
         for tool in tools:
-            tool["inputSchema"]["properties"]["azure_context"] = azure_context_schema
+            schema = tool.get("inputSchema")
+            if not isinstance(schema, dict):
+                continue
+            properties = schema.setdefault("properties", {})
+            properties.setdefault("azure_context", copy.deepcopy(azure_schema))
+            properties.setdefault("azure", copy.deepcopy(azure_schema))
 
         return {"result": {"tools": tools}}
 
