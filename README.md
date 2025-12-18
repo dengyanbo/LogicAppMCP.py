@@ -50,6 +50,15 @@ HTTP/MCP request
 - `POST /mcp/standard/request` – Standard MCP tools (list, get, deploy, monitor).
 - `POST /mcp/kudu/request` – Kudu MCP tools (file browse, commands, logs).
 
+### Listing tools
+Use a minimal MCP request body with proper JSON quoting. For example, to list the available Consumption tools from a shell:
+```bash
+curl -X POST https://<your-app>/mcp/consumption/request \
+  -H "Content-Type: application/json" \
+  -d '{"id":"list-tools","method":"tools/list"}'
+```
+If you omit the surrounding single quotes or escape characters, `curl` will send an invalid JSON body and the service will return a `json_invalid` error.
+
 ### MCP request payloads
 - Every `tools/call` payload should include an `azure` object inside `params.arguments` that supplies `subscription_id` and `resource_group`, plus optional `tenant_id`/`client_id`/`client_secret` for service principal auth.
 - When `client_secret` is not present, the server authenticates with the locally available Azure CLI/device login (`az login`) via `DefaultAzureCredential`.
